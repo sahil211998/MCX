@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MCX Smart Signal</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --card: #1a2332;
+      --text: #e7ecf3;
+      --muted: #8b9bb4;
+      --buy: #3dd68c;
+      --sell: #ff6b6b;
+      --flat: #ffc048;
+      --accent: #5b8cff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: radial-gradient(1200px 600px at 20% 0%, #1a2744 0%, var(--bg) 55%);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.45;
+    }
+    header { padding: 2rem 1.5rem 1rem; max-width: 1280px; margin: 0 auto; }
+    h1 { margin: 0 0 0.5rem; font-size: 1.65rem; font-weight: 650; letter-spacing: -0.02em; }
+    .tagline {
+      font-size: 1.05rem; color: var(--muted); max-width: 44rem;
+      border-left: 3px solid var(--accent); padding-left: 1rem; margin: 0.75rem 0 0;
+    }
+    .note { font-size: 0.82rem; color: var(--muted); margin-top: 0.85rem; }
+    .layout {
+      max-width: 1280px; margin: 0 auto; padding: 0 1.5rem 2.5rem;
+      display: grid; grid-template-columns: minmax(220px, 270px) 1fr; gap: 1.25rem;
+    }
+    @media (max-width: 880px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+    .panel {
+      background: var(--card); border-radius: 12px; padding: 1rem;
+      box-shadow: 0 16px 40px rgba(0,0,0,0.35);
+    }
+    .panel h2 { margin: 0 0 0.75rem; font-size: 1rem; color: var(--muted); font-weight: 600; }
+    #commodityList {
+      list-style: none; margin: 0; padding: 0;
+      max-height: 70vh; overflow-y: auto;
+    }
+    #commodityList li button {
+      width: 100%; text-align: left; margin-bottom: 0.35rem;
+      padding: 0.45rem 0.55rem; border-radius: 8px;
+      border: 1px solid #334155; background: #131c2b; color: var(--text);
+      cursor: pointer; font-size: 0.85rem;
+    }
+    #commodityList li button:hover { border-color: var(--accent); }
+    #commodityList li button.active { border-color: var(--accent); background: #1e2a42; }
+    .muted { color: var(--muted); font-size: 0.82rem; }
+    .callbox { background: #131c2b; border-radius: 8px; padding: 0.75rem; margin-bottom: 0.85rem; }
+    .callbox strong { color: var(--accent); }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    @media (max-width: 640px) { .grid2 { grid-template-columns: 1fr; } }
+    .metric { font-size: 0.9rem; }
+    .metric span { color: var(--muted); display: block; font-size: 0.75rem; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin: 1rem 0 0.75rem; }
+    button.primary {
+      background: var(--accent); color: #fff; border: none;
+      padding: 0.5rem 1rem; border-radius: 8px; font-weight: 600; cursor: pointer;
+    }
+    button.secondary {
+      background: transparent; color: var(--text); border: 1px solid #334155;
+      padding: 0.5rem 1rem; border-radius: 8px; font-weight: 600; cursor: pointer;
+    }
+    button.primary:hover { filter: brightness(1.08); }
+    table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 12px; overflow: hidden; }
+    th, td { padding: 0.55rem 0.65rem; text-align: left; font-size: 0.8rem; }
+    th { background: #131c2b; color: var(--muted); font-weight: 600; }
+    th.th-calltime { padding: 0; vertical-align: bottom; }
+    th.th-calltime button {
+      width: 100%; text-align: left; padding: 0.55rem 0.65rem;
+      background: transparent; border: none; color: inherit;
+      font: inherit; font-weight: 600; cursor: pointer;
+      display: flex; align-items: center; justify-content: space-between; gap: 0.35rem;
+    }
+    th.th-calltime button:hover { color: var(--accent); }
+    .signal-filters {
+      display: flex; flex-wrap: wrap; gap: 0.65rem 1rem; align-items: flex-end;
+      margin-bottom: 0.65rem; font-size: 0.78rem;
+    }
+    .signal-filters label { display: flex; flex-direction: column; gap: 0.2rem; color: var(--muted); }
+    .signal-filters input, .signal-filters select {
+      background: #131c2b; border: 1px solid #334155; border-radius: 6px;
+      color: var(--text); padding: 0.35rem 0.5rem; font-size: 0.78rem;
+    }
+    .dt-filter { display: flex; flex-direction: column; gap: 0.25rem; color: var(--muted); }
+    .dt-filter .dt-caption { font-size: 0.78rem; }
+    .dt-pair {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem;
+    }
+    .dt-pair input[type="date"] {
+      min-width: 9.5rem;
+      cursor: pointer;
+    }
+    .dt-pair input[type="time"] { min-width: 6.5rem; }
+    .dt-pair .btn-open-cal {
+      flex-shrink: 0;
+      padding: 0.3rem 0.45rem;
+      font-size: 0.85rem;
+      line-height: 1;
+      border-radius: 6px;
+      border: 1px solid #334155;
+      background: #131c2b;
+      color: var(--accent);
+      cursor: pointer;
+    }
+    .dt-pair .btn-open-cal:hover { border-color: var(--accent); }
+    .dt-hint { font-size: 0.68rem; color: var(--muted); opacity: 0.9; margin-top: 0.1rem; }
+    tr:not(:last-child) td { border-bottom: 1px solid #243044; }
+    .dir-BUY { color: var(--buy); font-weight: 700; }
+    .dir-SELL { color: var(--sell); font-weight: 700; }
+    .dir-NO_TRADE { color: var(--flat); font-weight: 600; }
+    .out-target_hit { color: var(--buy); font-weight: 700; }
+    .out-stop_hit { color: var(--sell); font-weight: 700; }
+    .out-open, .out-pending { color: var(--flat); }
+    .out-no_trade, .out-unavailable { color: var(--muted); font-weight: 600; }
+    tr.phase-stop_hit td {
+      background: rgba(153, 27, 27, 0.42) !important;
+      color: #fecaca !important;
+      border-color: rgba(127, 29, 29, 0.45);
+    }
+    tr.phase-stop_hit td a, tr.phase-stop_hit td strong { color: #fecaca; }
+    tr.phase-active td {
+      background: rgba(22, 101, 52, 0.22) !important;
+      color: #ecfdf5 !important;
+    }
+    tr.phase-target_hit td {
+      background: rgba(21, 128, 61, 0.28) !important;
+      color: #dcfce7 !important;
+    }
+    tr.phase-waiting_entry td {
+      background: rgba(30, 41, 59, 0.55) !important;
+    }
+    tr.phase-no_trade td, tr.phase-unavailable td { opacity: 0.92; }
+    .live-status { font-weight: 700; }
+    .live-status.st-stop { color: #fecaca; }
+    .live-status.st-active { color: var(--buy); }
+    .live-status.st-target { color: #86efac; }
+    .live-status.st-wait { color: var(--flat); }
+    .live-status.st-muted { color: var(--muted); font-weight: 600; }
+    #status { font-size: 0.88rem; color: var(--muted); }
+    .wide-wrap { overflow-x: auto; }
+    .hidden { display: none; }
+    .signal-tabs {
+      display: flex; flex-wrap: wrap; gap: 0.35rem;
+      margin: 0.85rem 0 0; padding: 0;
+      border-bottom: 1px solid #334155;
+    }
+    .signal-tabs button {
+      appearance: none;
+      margin: 0 0 -1px;
+      padding: 0.55rem 1.1rem;
+      font: inherit; font-weight: 650; font-size: 0.88rem;
+      color: var(--muted);
+      background: transparent;
+      border: 1px solid transparent;
+      border-bottom: none;
+      border-radius: 10px 10px 0 0;
+      cursor: pointer;
+      transition: color 0.15s, background 0.15s;
+    }
+    .signal-tabs button:hover { color: var(--text); background: rgba(91, 140, 255, 0.08); }
+    .signal-tabs button.active {
+      color: var(--text);
+      background: #131c2b;
+      border-color: #334155;
+      border-bottom: 1px solid #131c2b;
+      box-shadow: 0 -2px 0 var(--accent) inset;
+    }
+    .signal-tab-panel { margin-top: 0.65rem; }
+    .signal-tab-panel h3 {
+      margin: 0 0 0.45rem;
+      font-size: 0.92rem;
+      font-weight: 650;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+    .signal-tab-panel .panel-lede {
+      font-size: 0.78rem; color: var(--muted);
+      line-height: 1.45;
+      margin: 0 0 0.65rem;
+      max-width: 52rem;
+    }
+    .tab-badge {
+      display: inline-block;
+      margin-left: 0.35rem;
+      padding: 0.12rem 0.45rem;
+      border-radius: 999px;
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      background: rgba(91, 140, 255, 0.2);
+      color: var(--accent);
+      vertical-align: middle;
+    }
+    .tab-badge.swing { background: rgba(100, 116, 139, 0.35); color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>MCX Smart Signal</h1>
+    <p class="tagline">
+      Trade with logic, not emotion — every signal backed by data, pattern, and discipline.
+    </p>
+    <p class="note">
+      <strong>Only six contracts:</strong> ALUMINI, ZINCMINI, SILVERM, CRUDEOILM, NATURALGAS, NATGASMINI.
+      Does not guarantee profit. Click to load full history, intraday proxy (default 30m, optional 15m), long-term proxy (default 4h), swing targets; call time is stored.
+      Intraday timing uses a <strong>Yahoo proxy</strong>; intraday prices in the app are scaled to <strong>MCX INR</strong> using live LTP or last MCX daily close.
+    </p>
+    <details class="note" style="max-width:1280px;margin:0 auto;padding:0 1.5rem 1rem;">
+      <summary style="cursor:pointer;font-weight:650;color:var(--accent);">How this maps to <em>institutional-style</em> signal tools</summary>
+      <p class="muted" style="margin:0.65rem 0 0.5rem;max-width:52rem;line-height:1.5">
+        Many prop and futures desks layer <strong>VWAP</strong>, <strong>relative volume</strong>, and <strong>prior-day (PD)</strong> high/low/close with platforms that show <strong>order flow</strong> (footprint, delta, DOM). Examples in that space include vendor order-flow analytics and multi-confluence chart suites (often paired with data terminals).
+        This project does <strong>not</strong> subscribe to paid institutional feeds or MCX L2/L3 tape—it adds the <strong>same family of price/volume structure metrics</strong> we can compute from public bhav, watch LTP, and Yahoo proxy bars (intraday + long-term), plus your existing EMA/RSI/ATR/MACD/Bollinger confluence.
+      </p>
+    </details>
+  </header>
+
+  <div class="layout">
+    <aside class="panel">
+      <h2>Mini &amp; gas (6)</h2>
+      <p class="muted" id="catalogMeta">Loading catalog…</p>
+      <ul id="commodityList"></ul>
+    </aside>
+    <section class="panel">
+      <h2>Analysis</h2>
+      <p id="detailIntro" class="muted">Select a commodity.</p>
+      <div id="detailBody" class="hidden" aria-live="polite"></div>
+      <div class="toolbar">
+        <button type="button" class="primary" id="btnAnalyze" disabled>Analyze selected (store DB)</button>
+        <button type="button" class="secondary" id="btnAnalyzeNoStore">Analyze without DB</button>
+        <button type="button" class="secondary" id="btnGenAll">Generate all six (store DB)</button>
+        <button type="button" class="secondary" id="btnResetRegenerate" title="Truncate all signal/trade-level rows, then batch-generate fresh calls">Wipe stored data &amp; regenerate all six</button>
+      </div>
+      <p id="status"></p>
+      <div id="autoGenPanel" class="callbox" style="margin-top:0.85rem;border-left:3px solid var(--accent);">
+        <div class="muted"><strong>Automatic batch</strong> — lists <strong>direction changes</strong> vs the prior successful run and current <strong>intraday BUY/SELL</strong>; full snapshot in details.</div>
+        <p id="autoGenSummary" class="muted" style="margin:0.35rem 0 0;font-size:0.82rem;line-height:1.45">Loading auto-status…</p>
+        <div id="autoGenCalls" class="wide-wrap" style="margin-top:0.5rem;"></div>
+      </div>
+      <h2 class="muted" style="margin-top:1.25rem;font-size:0.95rem;">Recent stored calls</h2>
+      <p class="muted" style="font-size:0.8rem;margin:0.25rem 0 0.5rem">
+        Same underlying rows; switch tabs to focus on <strong>intraday</strong> (15–30m proxy execution levels) or <strong>long / swing</strong> (2–4h Yahoo proxy default, MCX-scaled; MCX daily still in desk context).
+        <strong>Intraday %</strong> vs <strong>Daily context %</strong> use different bar sets; <strong>Blend %</strong> mixes them for the headline score.
+        <br /><strong>Entry / stop / target</strong> in each row are the <strong>fixed snapshot</strong> from when that call was stored (2 dp INR); they are not recalculated or “extended” later.
+        <br />Sorting and filters use <strong>call time</strong> (<code>call_generated_at</code>, else <code>created_at</code>), newest first by default.
+        <br />Signal batch (default <strong>every 2 minutes</strong>): <code>AUTO_SIGNAL_INTERVAL_SECS</code>; off: <code>AUTO_SIGNAL_ENABLED=0</code>.
+        <br /><strong>Intraday outcomes</strong> (target/stop vs LTP) refresh on a <strong>daily schedule</strong> — default <strong>23:25</strong> <code>Asia/Kolkata</code> — not after every signal write. Env: <code>INTRADAY_OUTCOME_LOCAL_HOUR</code>, <code>INTRADAY_OUTCOME_LOCAL_MINUTE</code>, <code>INTRADAY_OUTCOME_TZ</code>.
+      </p>
+      <div class="signal-filters" aria-label="Filter by call time and product">
+        <div class="dt-filter" role="group" aria-labelledby="capFrom">
+          <span id="capFrom" class="dt-caption">Call time from</span>
+          <div class="dt-pair">
+            <input type="date" id="filterCallFromDate" autocomplete="off" aria-label="Call time from, date (calendar)" />
+            <input type="time" id="filterCallFromTime" step="1" autocomplete="off" aria-label="Call time from, time" />
+            <button type="button" class="btn-open-cal" id="btnOpenCalFrom" title="Open calendar" aria-label="Open date calendar for from">📅</button>
+          </div>
+          <span class="dt-hint">Pick a date (calendar) and optional time; empty time = start of day.</span>
+        </div>
+        <div class="dt-filter" role="group" aria-labelledby="capTo">
+          <span id="capTo" class="dt-caption">Call time to</span>
+          <div class="dt-pair">
+            <input type="date" id="filterCallToDate" autocomplete="off" aria-label="Call time to, date (calendar)" />
+            <input type="time" id="filterCallToTime" step="1" autocomplete="off" aria-label="Call time to, time" />
+            <button type="button" class="btn-open-cal" id="btnOpenCalTo" title="Open calendar" aria-label="Open date calendar for to">📅</button>
+          </div>
+          <span class="dt-hint">Empty time = end of that day (23:59:59).</span>
+        </div>
+        <label>Product
+          <select id="filterProduct"><option value="">All products</option></select>
+        </label>
+        <button type="button" class="secondary" id="btnClearSignalFilters">Clear filters</button>
+      </div>
+      <div class="signal-tabs" role="tablist" aria-label="Call type">
+        <button type="button" class="active" role="tab" id="tabIntraday" aria-selected="true" aria-controls="panelIntraday">Intraday<span class="tab-badge">proxy</span></button>
+        <button type="button" role="tab" id="tabLong" aria-selected="false" aria-controls="panelLong">Long / swing<span class="tab-badge swing">Daily</span></button>
+      </div>
+      <div id="panelIntraday" class="signal-tab-panel" role="tabpanel" aria-labelledby="tabIntraday">
+        <h3>Intraday desk</h3>
+        <p class="panel-lede">Levels for same-session discipline. <strong>BUY:</strong> <em>Waiting</em> until LTP ≥ entry (between stop &amp; target); then <em>Active — in trade</em>. <strong>SELL:</strong> <em>Active — in trade</em> when LTP is between stop and target. <strong>Target hit</strong> / <strong>Stoploss hit</strong> when LTP reaches those levels. <strong>LTP</strong> = MCX watch each refresh. Nightly <code>outcome</code> = accuracy stats.</p>
+        <div id="accuracyPanel" class="callbox" style="border-left:3px solid #3dd68c;">
+          <div class="muted"><strong>Intraday target accuracy</strong> — scored on the schedule below (not tick-by-tick).</div>
+          <p id="accuracyText" class="muted" style="margin:0.35rem 0 0;font-size:0.82rem;line-height:1.45">Loading accuracy…</p>
+          <p id="outcomeScheduleText" class="muted" style="margin:0.35rem 0 0;font-size:0.78rem;line-height:1.45"></p>
+          <p style="margin:0.5rem 0 0"><button type="button" class="secondary" id="btnEvalOutcomesNow" style="font-size:0.78rem;padding:0.35rem 0.65rem">Score outcomes now</button> <span class="muted" style="font-size:0.72rem">Manual refresh (optional).</span></p>
+        </div>
+        <div class="wide-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th class="th-calltime" scope="col">
+                  <button type="button" id="btnSortCallTime" title="Toggle sort by call time">
+                    <span>Call time (UTC)</span>
+                    <span id="callTimeSortInd" aria-hidden="true">↓</span>
+                  </button>
+                </th>
+                <th>Product</th>
+                <th>Intraday call %</th>
+                <th>Daily context %</th>
+                <th>Blend %</th>
+                <th>Dir</th>
+                <th>Entry</th>
+                <th>Stop</th>
+                <th>Target</th>
+                <th>LTP (live)</th>
+                <th>Status</th>
+                <th>Eval note</th>
+              </tr>
+            </thead>
+            <tbody id="rowsIntraday"><tr><td colspan="12" class="muted">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div id="panelLong" class="signal-tab-panel hidden" role="tabpanel" aria-labelledby="tabLong">
+        <h3>Long / swing context</h3>
+        <p class="panel-lede">Daily MCX structure: direction and levels for multi-day reference. Automated LTP outcome scoring applies to the <strong>intraday</strong> tab only.</p>
+        <div class="wide-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th class="th-calltime" scope="col">
+                  <button type="button" id="btnSortCallTimeLong" title="Toggle sort by call time">
+                    <span>Call time (UTC)</span>
+                    <span id="callTimeSortIndLong" aria-hidden="true">↓</span>
+                  </button>
+                </th>
+                <th>Product</th>
+                <th>Daily context %</th>
+                <th>Intraday %</th>
+                <th>Blend %</th>
+                <th>Swing dir</th>
+                <th>Entry</th>
+                <th>Stop</th>
+                <th>Target</th>
+              </tr>
+            </thead>
+            <tbody id="rowsLong"><tr><td colspan="9" class="muted">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const commodityList = document.getElementById('commodityList');
+    const catalogMeta = document.getElementById('catalogMeta');
+    const detailIntro = document.getElementById('detailIntro');
+    const detailBody = document.getElementById('detailBody');
+    const btnAnalyze = document.getElementById('btnAnalyze');
+    const btnAnalyzeNoStore = document.getElementById('btnAnalyzeNoStore');
+    const status = document.getElementById('status');
+    const rowsIntraday = document.getElementById('rowsIntraday');
+    const rowsLong = document.getElementById('rowsLong');
+    const tabIntraday = document.getElementById('tabIntraday');
+    const tabLong = document.getElementById('tabLong');
+    const panelIntraday = document.getElementById('panelIntraday');
+    const panelLong = document.getElementById('panelLong');
+    const filterCallFromDate = document.getElementById('filterCallFromDate');
+    const filterCallFromTime = document.getElementById('filterCallFromTime');
+    const filterCallToDate = document.getElementById('filterCallToDate');
+    const filterCallToTime = document.getElementById('filterCallToTime');
+    const btnOpenCalFrom = document.getElementById('btnOpenCalFrom');
+    const btnOpenCalTo = document.getElementById('btnOpenCalTo');
+    const filterProduct = document.getElementById('filterProduct');
+    const btnClearSignalFilters = document.getElementById('btnClearSignalFilters');
+    const btnSortCallTime = document.getElementById('btnSortCallTime');
+    const callTimeSortInd = document.getElementById('callTimeSortInd');
+    const btnSortCallTimeLong = document.getElementById('btnSortCallTimeLong');
+    const callTimeSortIndLong = document.getElementById('callTimeSortIndLong');
+
+    let selectedProduct = null;
+    /** Raw rows from last /api/signals fetch (re-sort & filter in browser by call time). */
+    let signalsCache = [];
+    let sortCallTimeDescending = true;
+
+    function fmt(x) {
+      if (x === null || x === undefined) return '—';
+      if (typeof x === 'number') return Number.isFinite(x) ? x.toFixed(2) : '—';
+      return x;
+    }
+
+    function escapeHtml(s) {
+      if (s == null || s === undefined) return '';
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function shortNote(s, maxLen) {
+      if (s == null || s === undefined || s === '') return '—';
+      const t = String(s);
+      const m = maxLen != null ? maxLen : 48;
+      return escapeHtml(t.length > m ? t.slice(0, m) + '…' : t);
+    }
+
+    function renderDetail(data) {
+      const a = data.analysis || data;
+      const intra = a.intraday || {};
+      const lt = a.long_term || {};
+      const cs = a.confidence_scores || {};
+      const when = a.call_generated_at || '';
+      const ic = a.institutional_context || {};
+      const icMetrics = Array.isArray(ic.metrics_implemented)
+        ? ic.metrics_implemented.map((x) => '<li>' + escapeHtml(x) + '</li>').join('')
+        : '';
+      const pvd = ic.prev_day_mcx_inr;
+      const pvdHtml = pvd && (pvd.pd_high != null || pvd.pd_low != null || pvd.pd_close != null)
+        ? '<div class="metric"><span>Prior MCX day H / L / C (INR)</span>'
+          + fmt(pvd.pd_high) + ' / ' + fmt(pvd.pd_low) + ' / ' + fmt(pvd.pd_close) + '</div>'
+        : '';
+      const pvv = ic.price_vs_vwap || {};
+      const flow = ic.volume_flow_proxy || {};
+      detailBody.innerHTML = `
+        <div class="callbox" style="border-left:4px solid var(--buy)">
+          <div class="muted">Call scope (stored in DB)</div>
+          <strong style="font-size:1.1rem">INTRADAY</strong>
+          <div class="muted" style="margin-top:0.35rem">${a.call_scope_label || 'Primary actionable levels use the intraday proxy block below. Long-term block uses higher-timeframe proxy bars (default 4h), MCX-scaled.'}</div>
+        </div>
+        <div class="callbox">
+          <div class="muted">Confluence scores — <strong>intraday vs daily are computed on different bars</strong> (no longer forced equal)</div>
+          <div><strong>Intraday call %</strong> <span style="color:var(--accent);font-size:1.2rem">${cs.intraday_proxy_pct != null ? cs.intraday_proxy_pct + '%' : '—'}</span>
+            &nbsp;·&nbsp; <strong>Daily context %</strong> ${cs.daily_mcx_pct != null ? cs.daily_mcx_pct + '%' : '—'}
+            &nbsp;·&nbsp; <strong>Blend %</strong> ${cs.blended_pct != null ? cs.blended_pct + '%' : '—'} <span class="muted">(${cs.weights || ''})</span></div>
+          <div class="muted" style="margin-top:0.35rem"><code>confidence_pct</code> in DB = blend. Leg scores: <code>intraday_confidence_pct</code>, <code>long_term_confidence_pct</code>.</div>
+          <div class="muted" style="margin-top:0.35rem">${cs.explanation || ''}</div>
+        </div>
+        <div class="callbox" style="border-left:3px solid #64748b">
+          <div class="muted"><strong>Desk-style context</strong> — VWAP, relative volume, prior day, flow proxy</div>
+          <p class="muted" style="margin:0.35rem 0 0.55rem;font-size:0.8rem;line-height:1.45">${escapeHtml(ic.summary || '')}</p>
+          ${icMetrics ? `<ul class="muted" style="margin:0 0 0.65rem 1rem;padding:0;font-size:0.78rem;list-style:disc">${icMetrics}</ul>` : ''}
+          ${ic.vwap_mcx_inr != null ? `<div class="metric"><span>VWAP (MCX-scaled INR)</span><strong>${fmt(ic.vwap_mcx_inr)}</strong></div>` : ''}
+          ${ic.vwap_mcx_inr == null && ic.vwap_proxy != null ? `<div class="metric"><span>VWAP (proxy units)</span>${fmt(ic.vwap_proxy)}</div>` : ''}
+          ${ic.last_close_mcx_inr != null ? `<div class="metric"><span>Last intraday bar close (MCX-scaled)</span>${fmt(ic.last_close_mcx_inr)}</div>` : ''}
+          ${pvv.bias_label ? `<div class="metric"><span>vs VWAP</span><strong>${escapeHtml(String(pvv.position))}</strong> · ${escapeHtml(String(pvv.bias_label))}</div>` : ''}
+          ${ic.relative_volume != null ? `<div class="metric"><span>Relative vol (vs ~20-bar mean)</span><strong>${ic.relative_volume}</strong></div>` : ''}
+          ${flow.interpretation ? `<div class="metric"><span>Bar flow proxy</span>${escapeHtml(String(flow.interpretation))}</div>` : ''}
+          ${pvdHtml}
+          ${ic.note ? `<div class="muted" style="margin-top:0.35rem">${escapeHtml(ic.note)}</div>` : ''}
+        </div>
+        <div class="callbox">
+          <div class="muted">Call generated at (UTC)</div>
+          <strong>${when.replace('T', ' ').slice(0, 19)}</strong>
+          <div class="muted">${a.call_generated_at_note_ist || ''}</div>
+          ${a.live_ltp != null ? `<div class="muted">MCX live LTP: <strong>${fmt(a.live_ltp)}</strong> ${a.live_expiry ? '(' + a.live_expiry + ')' : ''}</div>` : ''}
+          <div class="muted">${a.intraday_data_note || ''}</div>
+          <div class="muted">Daily bars: ${a.daily_bars_used} · Intraday bars: ${a.intraday_bars_used}</div>
+        </div>
+        <div class="grid2">
+          <div class="callbox">
+            <div class="muted"><strong>INTRADAY call</strong> — ${intra.timeframe || 'intraday'} proxy (use these levels for intraday discipline)</div>
+            <div class="metric"><span>Direction</span><strong class="dir-${intra.direction}">${intra.direction}</strong></div>
+            <div class="metric"><span>Entry</span>${fmt(intra.entry)}</div>
+            <div class="metric"><span>Stop (1% from entry)</span>${fmt(intra.stop_loss)}</div>
+            <div class="metric"><span>Target (1% from entry)</span>${fmt(intra.target)}</div>
+            <div class="metric"><span>R:R</span>${fmt(intra.risk_reward)}</div>
+            <div class="metric"><span>Confidence</span>${intra.confidence_pct != null ? intra.confidence_pct + '%' : '—'}</div>
+          </div>
+          <div class="callbox">
+            <div class="muted">Daily MCX — context / swing only (not the intraday execution call)</div>
+            <div class="metric"><span>Daily direction</span><strong class="dir-${lt.direction}">${lt.direction}</strong></div>
+            <div class="metric"><span>Entry (daily)</span>${fmt(lt.entry)}</div>
+            <div class="metric"><span>Stop</span>${fmt(lt.stop_loss)}</div>
+            <div class="metric"><span>Daily model target (ATR/R:R)</span>${fmt(lt.target)}</div>
+            <div class="metric"><span>Swing target (3% from entry)</span>${fmt(lt.extended_swing_target)}</div>
+            <div class="metric"><span>Swing R:R (vs daily stop)</span>${fmt(lt.extended_swing_rr)}</div>
+            <div class="metric"><span>Daily confluence %</span>${lt.confidence_pct != null ? lt.confidence_pct + '%' : '—'}</div>
+          </div>
+        </div>
+        <p class="muted" style="margin-top:0.5rem;">${a.disclaimer || ''}</p>
+      `;
+      detailBody.classList.remove('hidden');
+      detailIntro.textContent = a.mcx_product + ' — full data loaded.';
+    }
+
+    async function loadCatalog() {
+      catalogMeta.textContent = 'Fetching MCX market watch…';
+      const r = await fetch('/api/commodities');
+      if (!r.ok) { catalogMeta.textContent = 'Catalog failed'; return; }
+      const list = await r.json();
+      catalogMeta.textContent = list.length + ' products';
+      commodityList.innerHTML = '';
+      for (const c of list) {
+        const li = document.createElement('li');
+        const b = document.createElement('button');
+        const sym = c.mcx_product;
+        b.type = 'button';
+        b.textContent = sym + (!c.on_mcx_watch ? ' (off watch)' : '');
+        b.title =
+          c.label +
+          (c.intraday_proxy_ticker ? ' · proxy ' + c.intraday_proxy_ticker : '') +
+          (c.on_mcx_watch ? '' : ' — not in today’s MCX FUTCOM watch');
+        b.addEventListener('click', () => {
+          document.querySelectorAll('#commodityList button').forEach(x => x.classList.remove('active'));
+          b.classList.add('active');
+          selectedProduct = sym;
+          detailIntro.textContent = 'Selected: ' + sym + ' — click Analyze.';
+          detailBody.innerHTML = '';
+          btnAnalyze.disabled = false;
+        });
+        li.appendChild(b);
+        commodityList.appendChild(li);
+      }
+    }
+
+    async function runAnalyze(store) {
+      if (!selectedProduct) return;
+      status.textContent = store ? 'Analyzing + storing (can take 1–3 min first run)…' : 'Analyzing…';
+      const q = store ? '?store=true&days=95&pause=0.04' : '?store=false&days=95&pause=0.04';
+      const r = await fetch('/api/commodities/' + encodeURIComponent(selectedProduct) + '/analyze' + q, { method: 'POST' });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.detail || r.statusText);
+      renderDetail(j);
+      status.textContent = store ? ('Stored id ' + (j.stored_id ?? '—')) : 'Preview only (not stored).';
+      if (store) await loadSignals();
+    }
+
+    function callTimeMs(s) {
+      const raw = s.call_generated_at || s.created_at || '';
+      const t = Date.parse(raw);
+      return Number.isFinite(t) ? t : 0;
+    }
+
+    function syncProductFilterOptions() {
+      const seen = [...new Set(signalsCache.map((x) => x.mcx_product).filter(Boolean))].sort();
+      const keep = filterProduct.value;
+      filterProduct.innerHTML = '<option value="">All products</option>'
+        + seen.map((p) => '<option value="' + p + '">' + p + '</option>').join('');
+      if (seen.includes(keep)) filterProduct.value = keep;
+    }
+
+    function timePartForParse(tm, defaultDayStart) {
+      if (!tm) return defaultDayStart ? '00:00:00' : null;
+      return tm.length === 5 ? tm + ':00' : tm;
+    }
+
+    function localFromBoundaryMs() {
+      const d = filterCallFromDate.value;
+      if (!d) return null;
+      const tm = filterCallFromTime.value;
+      const tpart = timePartForParse(tm, true);
+      const ms = Date.parse(d + 'T' + tpart);
+      return Number.isFinite(ms) ? ms : null;
+    }
+
+    function localToBoundaryMs() {
+      const d = filterCallToDate.value;
+      if (!d) return null;
+      const tm = filterCallToTime.value;
+      if (tm) {
+        const tpart = timePartForParse(tm, false);
+        if (!tpart) return null;
+        const ms = Date.parse(d + 'T' + tpart);
+        return Number.isFinite(ms) ? ms : null;
+      }
+      const ms = Date.parse(d + 'T23:59:59.999');
+      return Number.isFinite(ms) ? ms : null;
+    }
+
+    function passesCallTimeAndProductFilters(s) {
+      const t = callTimeMs(s);
+      const fromMs = localFromBoundaryMs();
+      const toMs = localToBoundaryMs();
+      if (fromMs != null && (t <= 0 || t < fromMs)) return false;
+      if (toMs != null && (t <= 0 || t > toMs)) return false;
+      if (filterProduct.value && s.mcx_product !== filterProduct.value) return false;
+      return true;
+    }
+
+    function sortByCallTimeOnly(a, b) {
+      const ta = callTimeMs(a);
+      const tb = callTimeMs(b);
+      const primary = sortCallTimeDescending ? (tb - ta) : (ta - tb);
+      if (primary !== 0) return primary;
+      const ia = Number(a.id) || 0;
+      const ib = Number(b.id) || 0;
+      return sortCallTimeDescending ? (ib - ia) : (ia - ib);
+    }
+
+    function updateCallTimeSortIndicators() {
+      const down = sortCallTimeDescending ? '↓' : '↑';
+      const title = sortCallTimeDescending
+        ? 'Newest call time first (click for oldest first)'
+        : 'Oldest call time first (click for newest first)';
+      callTimeSortInd.textContent = down;
+      btnSortCallTime.title = title;
+      if (callTimeSortIndLong) callTimeSortIndLong.textContent = down;
+      if (btnSortCallTimeLong) btnSortCallTimeLong.title = title;
+    }
+
+    function setSignalTab(which) {
+      const intra = which === 'intraday';
+      tabIntraday.classList.toggle('active', intra);
+      tabIntraday.setAttribute('aria-selected', intra);
+      tabLong.classList.toggle('active', !intra);
+      tabLong.setAttribute('aria-selected', !intra);
+      panelIntraday.classList.toggle('hidden', !intra);
+      panelLong.classList.toggle('hidden', intra);
+    }
+
+    function renderSignalsTable() {
+      const data = signalsCache.filter(passesCallTimeAndProductFilters).sort(sortByCallTimeOnly);
+      rowsIntraday.innerHTML = '';
+      rowsLong.innerHTML = '';
+      if (!signalsCache.length) {
+        rowsIntraday.innerHTML = '<tr><td colspan="12" class="muted">No stored calls yet.</td></tr>';
+        rowsLong.innerHTML = '<tr><td colspan="9" class="muted">No stored calls yet.</td></tr>';
+        return;
+      }
+      if (!data.length) {
+        rowsIntraday.innerHTML = '<tr><td colspan="12" class="muted">No rows match call time / product filters.</td></tr>';
+        rowsLong.innerHTML = '<tr><td colspan="9" class="muted">No rows match call time / product filters.</td></tr>';
+        return;
+      }
+      for (const s of data) {
+        const t = s.call_generated_at || s.created_at || '';
+        const ij = s.indicators_json && typeof s.indicators_json === 'object' ? s.indicators_json.confidence_scores : null;
+        const blended = s.confidence_pct != null ? s.confidence_pct : (ij && ij.blended_pct);
+        const phase = s.intraday_live_phase || '';
+        const rawStatus = s.intraday_status_label != null ? String(s.intraday_status_label) : '—';
+        const statusLabel = rawStatus;
+        const detail = s.intraday_status_detail || s.outcome_eval_note || '';
+        let stClass = 'live-status st-muted';
+        if (phase === 'stop_hit') stClass = 'live-status st-stop';
+        else if (phase === 'active') stClass = 'live-status st-active';
+        else if (phase === 'target_hit') stClass = 'live-status st-target';
+        else if (phase === 'waiting_entry') stClass = 'live-status st-wait';
+        const trI = document.createElement('tr');
+        trI.className = phase ? ('phase-' + phase) : '';
+        trI.innerHTML = `
+          <td class="muted">${t.replace('T', ' ').slice(0, 19)}</td>
+          <td><strong>${s.mcx_product}</strong></td>
+          <td><strong>${s.intraday_confidence_pct != null ? s.intraday_confidence_pct + '%' : '—'}</strong></td>
+          <td class="muted">${s.long_term_confidence_pct != null ? s.long_term_confidence_pct + '%' : '—'}</td>
+          <td class="muted">${blended != null ? blended + '%' : '—'}</td>
+          <td class="dir-${s.intraday_direction || 'NO_TRADE'}">${s.intraday_direction || '—'}</td>
+          <td>${fmt(s.intraday_entry)}</td>
+          <td>${fmt(s.intraday_stop)}</td>
+          <td>${fmt(s.intraday_target)}</td>
+          <td class="muted">${s.intraday_live_ltp != null ? fmt(s.intraday_live_ltp) : '—'}</td>
+          <td class="${stClass}">${escapeHtml(statusLabel)}</td>
+          <td class="muted" title="${escapeHtml(detail)}">${shortNote(detail, 56)}</td>
+        `;
+        trI.title = [
+          'Intraday: entry ' + fmt(s.intraday_entry) + ' | SL ' + fmt(s.intraday_stop) + ' | T ' + fmt(s.intraday_target),
+          detail ? String(detail) : '',
+          s.call_scope_label || '',
+          s.call_scope ? 'Scope: ' + s.call_scope : '',
+          s.confidence_explanation || (ij && ij.explanation) || '',
+        ].filter(Boolean).join('\n');
+        rowsIntraday.appendChild(trI);
+
+        const trL = document.createElement('tr');
+        trL.innerHTML = `
+          <td class="muted">${t.replace('T', ' ').slice(0, 19)}</td>
+          <td><strong>${s.mcx_product}</strong></td>
+          <td class="muted"><strong>${s.long_term_confidence_pct != null ? s.long_term_confidence_pct + '%' : '—'}</strong></td>
+          <td>${s.intraday_confidence_pct != null ? s.intraday_confidence_pct + '%' : '—'}</td>
+          <td class="muted">${blended != null ? blended + '%' : '—'}</td>
+          <td class="dir-${s.long_term_direction || s.direction}">${s.long_term_direction || s.direction}</td>
+          <td>${fmt(s.long_term_entry)}</td>
+          <td>${fmt(s.long_term_stop)}</td>
+          <td>${fmt(s.long_term_target)}</td>
+        `;
+        trL.title = [
+          'Swing / daily: entry ' + fmt(s.long_term_entry) + ' | SL ' + fmt(s.long_term_stop) + ' | T ' + fmt(s.long_term_target),
+          s.call_scope_label || '',
+          s.confidence_explanation || (ij && ij.explanation) || '',
+        ].filter(Boolean).join('\n');
+        rowsLong.appendChild(trL);
+      }
+    }
+
+    async function loadSignals() {
+      const r = await fetch('/api/signals?limit=40', { cache: 'no-store' });
+      if (!r.ok) return;
+      signalsCache = await r.json();
+      syncProductFilterOptions();
+      renderSignalsTable();
+    }
+
+    function toggleCallTimeSort() {
+      sortCallTimeDescending = !sortCallTimeDescending;
+      updateCallTimeSortIndicators();
+      renderSignalsTable();
+    }
+    btnSortCallTime.addEventListener('click', toggleCallTimeSort);
+    if (btnSortCallTimeLong) btnSortCallTimeLong.addEventListener('click', toggleCallTimeSort);
+    tabIntraday.addEventListener('click', () => setSignalTab('intraday'));
+    tabLong.addEventListener('click', () => setSignalTab('long'));
+    updateCallTimeSortIndicators();
+    function onSignalFilterChange() {
+      renderSignalsTable();
+    }
+    function bindFilterInput(el) {
+      if (!el) return;
+      el.addEventListener('input', onSignalFilterChange);
+      el.addEventListener('change', onSignalFilterChange);
+    }
+    bindFilterInput(filterCallFromDate);
+    bindFilterInput(filterCallFromTime);
+    bindFilterInput(filterCallToDate);
+    bindFilterInput(filterCallToTime);
+    filterProduct.addEventListener('change', onSignalFilterChange);
+
+    function openDatePicker(inputEl) {
+      if (!inputEl) return;
+      if (typeof inputEl.showPicker === 'function') {
+        try { inputEl.showPicker(); } catch (e) { inputEl.focus(); }
+      } else {
+        inputEl.focus();
+      }
+    }
+    if (btnOpenCalFrom) btnOpenCalFrom.addEventListener('click', () => openDatePicker(filterCallFromDate));
+    if (btnOpenCalTo) btnOpenCalTo.addEventListener('click', () => openDatePicker(filterCallToDate));
+
+    btnClearSignalFilters.addEventListener('click', () => {
+      filterCallFromDate.value = '';
+      filterCallFromTime.value = '';
+      filterCallToDate.value = '';
+      filterCallToTime.value = '';
+      filterProduct.value = '';
+      sortCallTimeDescending = true;
+      updateCallTimeSortIndicators();
+      renderSignalsTable();
+    });
+
+    btnAnalyze.addEventListener('click', async () => {
+      try { await runAnalyze(true); } catch (e) { status.textContent = 'Error: ' + e.message; }
+    });
+    btnAnalyzeNoStore.addEventListener('click', async () => {
+      try { await runAnalyze(false); } catch (e) { status.textContent = 'Error: ' + e.message; }
+    });
+    document.getElementById('btnGenAll').addEventListener('click', async () => {
+      status.textContent = 'Batch: all 6 contracts (can take several minutes)…';
+      try {
+        const r = await fetch('/api/signals/generate?days=90&pause=0.04', { method: 'POST' });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.detail || r.statusText);
+        status.textContent = 'Batch done: ' + (j.signals?.length ?? 0) + ' row(s).';
+        await loadSignals();
+      } catch (e) {
+        status.textContent = 'Error: ' + e.message;
+      }
+    });
+
+    document.getElementById('btnResetRegenerate').addEventListener('click', async () => {
+      if (!confirm(
+        'Delete ALL rows in mcx_smart_signals and mcx_trade_levels, then generate fresh calls for all 6 contracts? '
+        + 'This cannot be undone.',
+      )) return;
+      status.textContent = 'Wiping tables and regenerating (several minutes possible)…';
+      const postReset = async (resetKey) => {
+        const u = new URL('/api/signals/reset-and-generate', window.location.origin);
+        u.searchParams.set('days', '90');
+        u.searchParams.set('pause', '0.04');
+        if (resetKey) u.searchParams.set('reset_key', resetKey);
+        return fetch(u.toString(), { method: 'POST', cache: 'no-store' });
+      };
+      try {
+        let r = await postReset('');
+        if (r.status === 403) {
+          const k = window.prompt('Server requires MCX_SIGNAL_RESET_KEY. Enter reset_key value:');
+          if (k === null) {
+            status.textContent = 'Cancelled.';
+            return;
+          }
+          r = await postReset(k.trim());
+        }
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error((typeof j.detail === 'string' ? j.detail : null) || j.detail?.[0]?.msg || r.statusText);
+        status.textContent = 'Database cleared; regenerated ' + (j.regenerated ?? j.signals?.length ?? 0) + ' row(s).';
+        await loadSignals();
+      } catch (e) {
+        status.textContent = 'Error: ' + e.message;
+      }
+    });
+
+    async function loadAutoStatus() {
+      const sumEl = document.getElementById('autoGenSummary');
+      const callsEl = document.getElementById('autoGenCalls');
+      if (!sumEl || !callsEl) return;
+      try {
+        const r = await fetch('/api/signals/auto-status', { cache: 'no-store' });
+        if (!r.ok) return;
+        const j = await r.json();
+        const iv = j.interval_secs != null ? j.interval_secs : 120;
+        if (!j.auto_enabled) {
+          sumEl.textContent = 'Automatic batch is off. Set AUTO_SIGNAL_ENABLED=1 (default on) and restart the server to enable every '
+            + iv + 's.';
+          callsEl.innerHTML = '';
+          return;
+        }
+        const last = j.last_run;
+        if (!last) {
+          sumEl.textContent = 'Auto batch enabled (every ' + iv + 's). First run starts ~8s after server start; waiting for first cycle…';
+          callsEl.innerHTML = '';
+          return;
+        }
+        const t = (last.at || '').replace('T', ' ').slice(0, 19);
+        if (!last.ok) {
+          sumEl.textContent = 'Last auto run at ' + t + ' UTC failed: ' + (last.error || 'unknown error');
+          callsEl.innerHTML = '';
+          return;
+        }
+        const ac = last.actionable_intraday != null ? last.actionable_intraday : '—';
+        const dCnt = last.direction_change_count != null ? last.direction_change_count : (last.direction_changes_vs_previous || []).length;
+        sumEl.textContent = 'Last auto run at ' + t + ' UTC — stored ' + (last.generated_count ?? 0)
+          + ' row(s). Intraday actionable (not NO_TRADE): ' + ac + '. Direction changes vs prior run: ' + dCnt + '.';
+        const sigs = last.signals || [];
+        const changes = last.direction_changes_vs_previous || [];
+        const actList = last.actionable_intraday_list || [];
+        let html = '';
+        if (!last.has_previous_cycle) {
+          html += '<p class="muted" style="margin:0 0 0.5rem;font-size:0.78rem">First auto cycle after server start — no prior batch to compare. Next run will <strong>list only products whose intraday or daily direction changed</strong>.</p>';
+        } else if (changes.length === 0) {
+          html += '<p class="muted" style="margin:0 0 0.5rem;font-size:0.78rem"><strong>No direction change</strong> vs the previous auto run (intraday &amp; daily same as last time).</p>';
+        } else {
+          const chRows = changes.map((s) => '<tr><td><strong>' + escapeHtml(s.mcx_product) + '</strong></td>'
+            + '<td class="muted">' + escapeHtml(String(s.prior_intraday_direction ?? '—')) + ' → <strong class="dir-' + escapeHtml(s.intraday_direction || 'NO_TRADE') + '">' + escapeHtml(s.intraday_direction || '—') + '</strong></td>'
+            + '<td class="muted">' + escapeHtml(String(s.prior_daily_direction ?? '—')) + ' → <strong>' + escapeHtml(s.direction || '—') + '</strong></td>'
+            + '<td class="muted">' + (s.confidence_pct != null ? s.confidence_pct + '%' : '—') + '</td>'
+            + '<td class="muted">id ' + escapeHtml(String(s.id)) + '</td></tr>').join('');
+          html += '<p style="margin:0 0 0.35rem;font-size:0.8rem;color:var(--accent);font-weight:600">Calls that changed vs previous auto run</p>'
+            + '<table style="width:100%;font-size:0.78rem;margin-bottom:0.65rem"><thead><tr><th>Product</th><th>Intraday</th><th>Daily</th><th>Max %</th><th>Row id</th></tr></thead><tbody>'
+            + chRows + '</tbody></table>';
+        }
+        if (actList.length) {
+          const aRows = actList.map((s) => '<tr><td><strong>' + escapeHtml(s.mcx_product) + '</strong></td>'
+            + '<td class="dir-' + escapeHtml(s.intraday_direction || 'NO_TRADE') + '">' + escapeHtml(s.intraday_direction || '—') + '</td>'
+            + '<td class="muted">' + escapeHtml(s.direction || '—') + '</td>'
+            + '<td class="muted">' + (s.confidence_pct != null ? s.confidence_pct + '%' : '—') + '</td>'
+            + '<td class="muted">id ' + escapeHtml(String(s.id)) + '</td></tr>').join('');
+          html += '<p style="margin:0 0 0.35rem;font-size:0.8rem;font-weight:600">Intraday BUY / SELL this run</p>'
+            + '<table style="width:100%;font-size:0.78rem;margin-bottom:0.65rem"><thead><tr><th>Product</th><th>Intra</th><th>Daily</th><th>Max %</th><th>Row id</th></tr></thead><tbody>'
+            + aRows + '</tbody></table>';
+        } else {
+          html += '<p class="muted" style="margin:0 0 0.5rem;font-size:0.78rem">No intraday BUY/SELL this run (all NO_TRADE or flat).</p>';
+        }
+        if (sigs.length) {
+          const rows = sigs.map((s) => '<tr><td><strong>' + escapeHtml(s.mcx_product) + '</strong></td>'
+            + '<td class="dir-' + escapeHtml(s.intraday_direction || 'NO_TRADE') + '">' + escapeHtml(s.intraday_direction || '—') + '</td>'
+            + '<td class="muted">' + escapeHtml(s.direction || '—') + '</td>'
+            + '<td class="muted">' + (s.confidence_pct != null ? s.confidence_pct + '%' : '—') + '</td>'
+            + '<td class="muted">id ' + escapeHtml(String(s.id)) + '</td></tr>').join('');
+          html += '<details style="font-size:0.78rem"><summary class="muted" style="cursor:pointer">All six rows stored this run</summary>'
+            + '<table style="width:100%;font-size:0.78rem;margin-top:0.5rem"><thead><tr><th>Product</th><th>Intra</th><th>Daily</th><th>Max %</th><th>Row id</th></tr></thead><tbody>'
+            + rows + '</tbody></table></details>';
+        } else {
+          html += '<p class="muted" style="margin:0;font-size:0.78rem">No rows in last payload.</p>';
+        }
+        callsEl.innerHTML = html;
+      } catch (e) {
+        sumEl.textContent = 'Could not load auto-status.';
+        callsEl.innerHTML = '';
+      }
+    }
+
+    async function loadAccuracy() {
+      const el = document.getElementById('accuracyText');
+      if (!el) return;
+      try {
+        const r = await fetch('/api/signals/accuracy', { cache: 'no-store' });
+        if (!r.ok) return;
+        const a = await r.json();
+        const wr = a.win_rate_pct != null ? a.win_rate_pct + '%' : '— (need target_hit + stop_hit)';
+        el.innerHTML = '<strong>Win rate</strong> (target hit ÷ target+stop resolved): <strong style="color:var(--accent)">' + wr + '</strong>'
+          + ' · target_hit: <strong>' + (a.target_hits ?? 0) + '</strong>, stop_hit: <strong>' + (a.stop_hits ?? 0) + '</strong>'
+          + ', open/pending: ' + (a.open_or_pending ?? 0)
+          + '. ' + escapeHtml(a.methodology_note || '');
+      } catch (e) {
+        el.textContent = 'Could not load accuracy.';
+      }
+    }
+
+    async function loadOutcomeSchedule() {
+      const el = document.getElementById('outcomeScheduleText');
+      if (!el) return;
+      try {
+        const r = await fetch('/api/signals/outcome-schedule', { cache: 'no-store' });
+        if (!r.ok) return;
+        const s = await r.json();
+        const next = (s.next_run_utc || '').replace('T', ' ').slice(0, 19);
+        const on = s.scheduler_enabled !== false;
+        el.innerHTML = on
+          ? 'Next automated intraday scoring: <strong>' + escapeHtml(next) + ' UTC</strong> · local <strong>'
+            + escapeHtml(s.local_time_label || '') + '</strong> in <strong>' + escapeHtml(s.timezone || '') + '</strong>.'
+          : 'Automated scoring is off (<code>INTRADAY_OUTCOME_SCHEDULER_ENABLED=0</code>). Use the button below or POST <code>/api/signals/evaluate-outcomes</code>.';
+      } catch (e) {
+        el.textContent = '';
+      }
+    }
+
+    const btnEvalOutcomesNow = document.getElementById('btnEvalOutcomesNow');
+    if (btnEvalOutcomesNow) {
+      btnEvalOutcomesNow.addEventListener('click', async () => {
+        btnEvalOutcomesNow.disabled = true;
+        try {
+          const r = await fetch('/api/signals/evaluate-outcomes?limit=700', { method: 'POST', cache: 'no-store' });
+          if (r.ok) await loadAccuracy();
+          await loadSignals();
+          await loadOutcomeSchedule();
+        } catch (e) { /* ignore */ }
+        btnEvalOutcomesNow.disabled = false;
+      });
+    }
+
+    loadCatalog();
+    loadSignals();
+    loadAutoStatus();
+    loadAccuracy();
+    loadOutcomeSchedule();
+    setInterval(() => { loadSignals(); }, 30000);
+    setInterval(() => { loadAutoStatus(); }, 12000);
+    setInterval(() => { loadOutcomeSchedule(); }, 300000);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        loadSignals();
+        loadAutoStatus();
+        loadAccuracy();
+        loadOutcomeSchedule();
+      }
+    });
+  </script>
+</body>
+</html>

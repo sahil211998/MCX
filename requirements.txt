@@ -1,0 +1,12 @@
+pandas>=2.0.0
+numpy>=1.24.0
+yfinance>=0.2.40
+requests>=2.31.0
+feedparser>=6.0.10
+python-dotenv>=1.0.0
+mcxlib>=0.1.0
+lxml>=4.9.0
+mplfinance>=0.12.9
+psycopg2-binary>=2.9.9
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
