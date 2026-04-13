@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import math
 import os
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
+from zoneinfo import ZoneInfo
 
 if TYPE_CHECKING:
     from mcx_insight.strategy import TradeLevels
@@ -470,6 +472,35 @@ def fetch_accuracy_summary(
             "not proof target filled before stop. Research only."
         ),
     }
+
+
+def count_signals_for_product_calendar_day(
+    conn,
+    *,
+    mcx_product: str,
+    tz_name: str,
+) -> int:
+    """
+    Rows whose call time falls on the current calendar date in tz_name (e.g. Asia/Kolkata).
+    Used to cap automatic re-generation so published calls do not churn every batch.
+    """
+    tz = ZoneInfo(tz_name)
+    now_local = datetime.now(tz)
+    day_start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    next_day_local = day_start_local + timedelta(days=1)
+    start_utc = day_start_local.astimezone(timezone.utc)
+    end_utc = next_day_local.astimezone(timezone.utc)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT COUNT(*)::bigint FROM mcx_smart_signals
+            WHERE mcx_product = %s
+              AND COALESCE(call_generated_at, created_at) >= %s
+              AND COALESCE(call_generated_at, created_at) < %s
+            """,
+            (mcx_product, start_utc, end_utc),
+        )
+        return int(cur.fetchone()[0])
 
 
 def fetch_latest_signals(

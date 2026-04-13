@@ -10,6 +10,7 @@ import asyncio
 import logging
 import math
 import os
+import threading
 from collections import deque
 from contextlib import asynccontextmanager
 from functools import partial
@@ -34,6 +35,7 @@ from mcx_insight.config import SIGNAL_ONLY_MCX_SET  # noqa: E402
 from mcx_insight.catalog import list_mcx_futcom_commodities  # noqa: E402
 from mcx_insight.db import (  # noqa: E402
     connect_pg,
+    count_signals_for_product_calendar_day,
     ensure_schema,
     fetch_accuracy_summary,
     fetch_latest_signals,
@@ -50,17 +52,148 @@ STATIC_DIR = ROOT / "static"
 
 _auto_run_history: deque[dict[str, Any]] = deque(maxlen=30)
 _auto_worker_lock = asyncio.Lock()
+# Serialize count-then-insert so two concurrent writers cannot both see “0 rows today” and insert twice.
+_signal_write_lock = threading.Lock()
 
 
-def _generate_all_six(conn, days: int, pause: float) -> list[dict[str, Any]]:
+def _signal_calendar_tz_name() -> str:
+    """IST-style day boundary for daily call caps (defaults to outcome scheduler TZ)."""
+    z = (os.environ.get("AUTO_SIGNAL_CALENDAR_TZ") or os.environ.get("INTRADAY_OUTCOME_TZ") or "Asia/Kolkata").strip()
+    return z or "Asia/Kolkata"
+
+
+def _auto_max_new_calls_per_product_per_day() -> int:
+    """Auto batch: max new DB rows per symbol per calendar day in `_signal_calendar_tz_name()` (default 1)."""
+    try:
+        v = int(os.environ.get("AUTO_SIGNAL_MAX_NEW_CALLS_PER_PRODUCT_PER_DAY", "1"))
+    except ValueError:
+        v = 1
+    return max(1, min(v, 24))
+
+
+def _auto_only_new_call_after_resolution() -> bool:
+    """
+    Auto worker policy:
+    - If the latest stored intraday BUY/SELL call for a symbol has NOT hit stop/target yet, do not store a new call.
+    - New call allowed only after stop/target is hit (snapshot vs live LTP), or if there is no actionable call.
+    """
+    return os.environ.get("AUTO_SIGNAL_ONLY_AFTER_RESOLUTION", "1").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _skip_reason_snapshot(conn, mcx_product: str, reason: str) -> dict[str, Any]:
+    """Snapshot from latest stored row so auto-run history always has six products for diffs."""
+    rows = fetch_latest_signals(conn, limit=1, mcx_products_only=[mcx_product])
+    if not rows:
+        return {
+            "skipped": True,
+            "skip_reason": reason,
+            "mcx_product": mcx_product,
+            "id": None,
+            "symbol_key": None,
+            "direction": None,
+            "intraday_direction": None,
+            "confidence_pct": None,
+            "risk_reward": None,
+        }
+    r = rows[0]
+    return {
+        "skipped": True,
+        "skip_reason": reason,
+        "mcx_product": mcx_product,
+        "id": r.get("id"),
+        "symbol_key": r.get("symbol_key"),
+        "direction": r.get("direction"),
+        "intraday_direction": r.get("intraday_direction"),
+        "confidence_pct": r.get("confidence_pct"),
+        "risk_reward": r.get("risk_reward"),
+    }
+
+
+def _latest_intraday_call_is_resolved(conn, mcx_product: str) -> bool:
+    """
+    True if there is no actionable intraday call (so we can generate), OR if latest call has hit target/stop.
+    Uses the same snapshot logic as the UI: latest stored row + current MCX watch LTP.
+    """
+    rows = fetch_latest_signals(conn, limit=1, mcx_products_only=[mcx_product])
+    if not rows:
+        return True
+    r = rows[0]
+    idir = str(r.get("intraday_direction") or "").strip().upper()
+    if idir not in ("BUY", "SELL"):
+        return True
+    q = live_quote(mcx_product)
+    ltp = float(q.ltp) if q is not None and q.ltp is not None else None
+    phase, _label, _detail, _stage = intraday_live_status(
+        intraday_direction=idir,
+        entry=r.get("intraday_entry"),
+        stop=r.get("intraday_stop"),
+        target=r.get("intraday_target"),
+        ltp=ltp,
+    )
+    return phase in ("target_hit", "stop_hit")
+
+
+def _skipped_batch_row(conn, mcx_product: str) -> dict[str, Any]:
+    """Snapshot from latest stored row so auto-run history always has six products for diffs."""
+    return _skip_reason_snapshot(conn, mcx_product, "daily_cap")
+
+
+def _generate_all_six(
+    conn,
+    days: int,
+    pause: float,
+    *,
+    respect_daily_cap: bool = False,
+) -> list[dict[str, Any]]:
+    """
+    Insert up to six dual-horizon rows. When `respect_daily_cap` is True (auto worker only),
+    skip analysis + insert if this symbol already has `max` rows today in the calendar TZ.
+    Manual `/api/signals/generate` and per-product analyze use `respect_daily_cap=False`.
+
+    Lock is held only around DB count/insert so concurrent requests cannot both pass the cap;
+    heavy analysis runs outside the lock.
+    """
     generated: list[dict[str, Any]] = []
+    tz_name = _signal_calendar_tz_name()
+    max_day = _auto_max_new_calls_per_product_per_day()
     for mcx_product in SIGNAL_ONLY_MCX_PRODUCTS:
+        if respect_daily_cap:
+            with _signal_write_lock:
+                n_today = count_signals_for_product_calendar_day(
+                    conn, mcx_product=mcx_product, tz_name=tz_name
+                )
+                if n_today >= max_day:
+                    generated.append(_skipped_batch_row(conn, mcx_product))
+                    continue
+                if _auto_only_new_call_after_resolution() and not _latest_intraday_call_is_resolved(
+                    conn, mcx_product
+                ):
+                    generated.append(_skip_reason_snapshot(conn, mcx_product, "unresolved_call"))
+                    continue
         dual = run_dual_analysis(
             mcx_product,
             calendar_days=min(max(40, days), 240),
             bhav_pause=max(0.0, pause),
         )
-        new_id = insert_dual_horizon_signal(conn, dual.to_db_row(), disclaimer=dual.disclaimer)
+        with _signal_write_lock:
+            if respect_daily_cap:
+                n2 = count_signals_for_product_calendar_day(
+                    conn, mcx_product=mcx_product, tz_name=tz_name
+                )
+                if n2 >= max_day:
+                    generated.append(_skipped_batch_row(conn, mcx_product))
+                    continue
+                if _auto_only_new_call_after_resolution() and not _latest_intraday_call_is_resolved(
+                    conn, mcx_product
+                ):
+                    generated.append(_skip_reason_snapshot(conn, mcx_product, "unresolved_call"))
+                    continue
+            new_id = insert_dual_horizon_signal(conn, dual.to_db_row(), disclaimer=dual.disclaimer)
         generated.append(
             {
                 "id": new_id,
@@ -217,6 +350,8 @@ def _sync_auto_generate_batch(previous_signals: list[dict[str, Any]] | None) -> 
             "at": at,
             "error": str(e),
             "signals": [],
+            "generated_count": 0,
+            "skipped_count": 0,
             "actionable_intraday": 0,
             "direction_changes_vs_previous": [],
             "direction_change_count": 0,
@@ -225,14 +360,19 @@ def _sync_auto_generate_batch(previous_signals: list[dict[str, Any]] | None) -> 
         }
     try:
         ensure_schema(conn)
-        generated = _generate_all_six(conn, days=90, pause=0.04)
-        ac = _actionable_intraday_count(generated)
-        changes = _direction_changes_vs_previous(generated, previous_signals)
-        actionable_list = _actionable_intraday_rows(generated)
+        generated = _generate_all_six(conn, days=90, pause=0.04, respect_daily_cap=True)
+        inserted = [g for g in generated if not g.get("skipped")]
+        skipped_n = sum(1 for g in generated if g.get("skipped"))
+        ac = _actionable_intraday_count(inserted)
+        changes = _direction_changes_vs_previous(inserted, previous_signals)
+        actionable_list = _actionable_intraday_rows(inserted)
         return {
             "ok": True,
             "at": at,
-            "generated_count": len(generated),
+            "generated_count": len(inserted),
+            "skipped_count": skipped_n,
+            "calendar_tz": _signal_calendar_tz_name(),
+            "max_new_calls_per_product_per_day": _auto_max_new_calls_per_product_per_day(),
             "actionable_intraday": ac,
             "has_previous_cycle": previous_signals is not None,
             "direction_changes_vs_previous": changes,
@@ -247,6 +387,8 @@ def _sync_auto_generate_batch(previous_signals: list[dict[str, Any]] | None) -> 
             "at": at,
             "error": str(e),
             "signals": [],
+            "generated_count": 0,
+            "skipped_count": 0,
             "actionable_intraday": 0,
             "direction_changes_vs_previous": [],
             "direction_change_count": 0,
@@ -276,8 +418,10 @@ async def _auto_signal_worker() -> None:
             _auto_run_history.append(result)
             if result.get("ok"):
                 logger.info(
-                    "auto_signal: stored %s rows (%s actionable intraday, %s direction change(s) vs prior)",
+                    "auto_signal: inserted %s rows, skipped %s (daily cap), "
+                    "%s actionable intraday, %s direction change(s) vs prior",
                     result.get("generated_count"),
+                    result.get("skipped_count"),
                     result.get("actionable_intraday"),
                     result.get("direction_change_count"),
                 )
@@ -398,7 +542,8 @@ def api_analyze_commodity(
             raise HTTPException(503, f"Database unavailable: {e}") from e
         try:
             ensure_schema(conn)
-            new_id = insert_dual_horizon_signal(conn, dual.to_db_row(), disclaimer=dual.disclaimer)
+            with _signal_write_lock:
+                new_id = insert_dual_horizon_signal(conn, dual.to_db_row(), disclaimer=dual.disclaimer)
         finally:
             conn.close()
     return {"ok": True, "stored_id": new_id, "analysis": payload}
@@ -494,6 +639,8 @@ def api_auto_status() -> dict[str, Any]:
     return {
         "auto_enabled": _auto_signal_enabled(),
         "interval_secs": _auto_interval_secs(),
+        "calendar_tz": _signal_calendar_tz_name(),
+        "max_new_calls_per_product_per_day": _auto_max_new_calls_per_product_per_day(),
         "last_run": runs[0] if runs else None,
         "recent_runs": runs[:15],
     }

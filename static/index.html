@@ -123,24 +123,36 @@
     .out-stop_hit { color: var(--sell); font-weight: 700; }
     .out-open, .out-pending { color: var(--flat); }
     .out-no_trade, .out-unavailable { color: var(--muted); font-weight: 600; }
-    tr.phase-stop_hit td {
-      background: rgba(153, 27, 27, 0.42) !important;
-      color: #fecaca !important;
-      border-color: rgba(127, 29, 29, 0.45);
+    /* Direction / outcome colours only on “Call time (IST)” cell */
+    td.td-calltime {
+      font-weight: 600;
+      white-space: nowrap;
     }
-    tr.phase-stop_hit td a, tr.phase-stop_hit td strong { color: #fecaca; }
-    tr.phase-active td {
-      background: rgba(22, 101, 52, 0.22) !important;
-      color: #ecfdf5 !important;
+    td.td-calltime.td-ct-buy {
+      background: transparent;
+      color: inherit;
+      border-left: 4px solid #22c55e;
     }
-    tr.phase-target_hit td {
-      background: rgba(21, 128, 61, 0.28) !important;
-      color: #dcfce7 !important;
+    td.td-calltime.td-ct-sell {
+      background: transparent;
+      color: inherit;
+      border-left: 4px solid #f87171;
     }
-    tr.phase-waiting_entry td {
-      background: rgba(30, 41, 59, 0.55) !important;
+    td.td-calltime.td-ct-stoploss {
+      background: transparent;
+      color: inherit;
+      border-left: 4px solid #7f1d1d;
     }
-    tr.phase-no_trade td, tr.phase-unavailable td { opacity: 0.92; }
+    td.td-calltime.td-ct-target {
+      background: transparent;
+      color: inherit;
+      border-left: 4px solid #16a34a;
+    }
+    td.td-calltime.td-ct-neutral {
+      background: transparent;
+      color: inherit;
+      border-left: none;
+    }
     .live-status { font-weight: 700; }
     .live-status.st-stop { color: #fecaca; }
     .live-status.st-active { color: var(--buy); }
@@ -204,6 +216,60 @@
       vertical-align: middle;
     }
     .tab-badge.swing { background: rgba(100, 116, 139, 0.35); color: #94a3b8; }
+    /* Intraday accuracy card (reference layout) */
+    .accuracy-panel {
+      border-left: 4px solid #4ade80 !important;
+      background: linear-gradient(105deg, rgba(74, 222, 128, 0.07) 0%, rgba(26, 35, 50, 0.4) 42%);
+      padding: 0.9rem 1rem 1rem;
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    }
+    .accuracy-panel .accuracy-title {
+      margin: 0;
+      font-size: 0.92rem;
+      font-weight: 650;
+      color: var(--accent);
+      letter-spacing: -0.02em;
+    }
+    .accuracy-panel .accuracy-sub {
+      margin: 0.3rem 0 0.65rem;
+      font-size: 0.78rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .accuracy-panel .accuracy-stats {
+      margin: 0;
+      font-size: 0.82rem;
+      line-height: 1.55;
+      color: var(--text);
+    }
+    .accuracy-panel .accent-num {
+      color: var(--accent);
+      font-weight: 700;
+    }
+    .accuracy-panel .accuracy-method {
+      margin: 0.4rem 0 0;
+      font-size: 0.75rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .accuracy-panel .accuracy-next {
+      margin: 0.5rem 0 0;
+      font-size: 0.8rem;
+      line-height: 1.5;
+      color: var(--text);
+    }
+    .accuracy-panel .accuracy-next .next-time {
+      color: var(--accent);
+      font-weight: 650;
+    }
+    .accuracy-panel .accuracy-actions {
+      margin: 0.65rem 0 0;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem 0.75rem;
+    }
   </style>
 </head>
 <body>
@@ -253,8 +319,8 @@
         Same underlying rows; switch tabs to focus on <strong>intraday</strong> (15–30m proxy execution levels) or <strong>long / swing</strong> (2–4h Yahoo proxy default, MCX-scaled; MCX daily still in desk context).
         <strong>Intraday %</strong> vs <strong>Daily context %</strong> use different bar sets; <strong>Blend %</strong> mixes them for the headline score.
         <br /><strong>Entry / stop / target</strong> in each row are the <strong>fixed snapshot</strong> from when that call was stored (2 dp INR); they are not recalculated or “extended” later.
-        <br />Sorting and filters use <strong>call time</strong> (<code>call_generated_at</code>, else <code>created_at</code>), newest first by default.
-        <br />Signal batch (default <strong>every 2 minutes</strong>): <code>AUTO_SIGNAL_INTERVAL_SECS</code>; off: <code>AUTO_SIGNAL_ENABLED=0</code>.
+        <br />Sorting and filters use <strong>call time</strong> (<code>call_generated_at</code>, else <code>created_at</code>), shown in <strong>IST</strong>, newest first by default.
+        <br />The <strong>auto worker</strong> wakes every <code>AUTO_SIGNAL_INTERVAL_SECS</code> (default 120s) but will <strong>not</strong> generate a new stored call if the latest intraday BUY/SELL call for that product is still <strong>unresolved</strong> (has not hit target/stop vs the current MCX watch LTP). Default behavior: <code>AUTO_SIGNAL_ONLY_AFTER_RESOLUTION=1</code>. On top of that, it also applies a daily cap (default <strong>one new row per product per calendar day</strong> in <code>AUTO_SIGNAL_CALENDAR_TZ</code> / <code>INTRADAY_OUTCOME_TZ</code>, usually IST). Raise the cap with <code>AUTO_SIGNAL_MAX_NEW_CALLS_PER_PRODUCT_PER_DAY</code> (e.g. <code>2</code>). Disable the worker: <code>AUTO_SIGNAL_ENABLED=0</code>. Buttons <strong>Generate all six</strong> / <strong>Analyze (store)</strong> always write new rows (no cap).
         <br /><strong>Intraday outcomes</strong> (target/stop vs LTP) refresh on a <strong>daily schedule</strong> — default <strong>23:25</strong> <code>Asia/Kolkata</code> — not after every signal write. Env: <code>INTRADAY_OUTCOME_LOCAL_HOUR</code>, <code>INTRADAY_OUTCOME_LOCAL_MINUTE</code>, <code>INTRADAY_OUTCOME_TZ</code>.
       </p>
       <div class="signal-filters" aria-label="Filter by call time and product">
@@ -287,12 +353,16 @@
       </div>
       <div id="panelIntraday" class="signal-tab-panel" role="tabpanel" aria-labelledby="tabIntraday">
         <h3>Intraday desk</h3>
-        <p class="panel-lede">Levels for same-session discipline. <strong>BUY:</strong> <em>Waiting</em> until LTP ≥ entry (between stop &amp; target); then <em>Active — in trade</em>. <strong>SELL:</strong> <em>Active — in trade</em> when LTP is between stop and target. <strong>Target hit</strong> / <strong>Stoploss hit</strong> when LTP reaches those levels. <strong>LTP</strong> = MCX watch each refresh. Nightly <code>outcome</code> = accuracy stats.</p>
-        <div id="accuracyPanel" class="callbox" style="border-left:3px solid #3dd68c;">
-          <div class="muted"><strong>Intraday target accuracy</strong> — scored on the schedule below (not tick-by-tick).</div>
-          <p id="accuracyText" class="muted" style="margin:0.35rem 0 0;font-size:0.82rem;line-height:1.45">Loading accuracy…</p>
-          <p id="outcomeScheduleText" class="muted" style="margin:0.35rem 0 0;font-size:0.78rem;line-height:1.45"></p>
-          <p style="margin:0.5rem 0 0"><button type="button" class="secondary" id="btnEvalOutcomesNow" style="font-size:0.78rem;padding:0.35rem 0.65rem">Score outcomes now</button> <span class="muted" style="font-size:0.72rem">Manual refresh (optional).</span></p>
+        <p class="panel-lede">Levels for same-session discipline. <strong>BUY:</strong> <em>Waiting</em> until LTP ≥ entry (still between stop &amp; target); then <em>Active</em>. <strong>SELL:</strong> <em>Active</em> while LTP is between target &amp; stop (entry is a reference; price may be above or below it in that zone). <strong>Target hit</strong> / <strong>Stoploss hit</strong> when LTP reaches those levels. <strong>LTP</strong> = MCX watch each refresh. Nightly <code>outcome</code> = accuracy stats.</p>
+        <div id="accuracyPanel" class="callbox accuracy-panel">
+          <p class="accuracy-title">Intraday target accuracy</p>
+          <p class="accuracy-sub">Scored on the schedule below (not tick-by-tick).</p>
+          <div id="accuracyText">Loading accuracy…</div>
+          <p id="outcomeScheduleText" class="accuracy-next" aria-live="polite"></p>
+          <div class="accuracy-actions">
+            <button type="button" class="secondary" id="btnEvalOutcomesNow" style="font-size:0.78rem;padding:0.4rem 0.75rem">Score outcomes now</button>
+            <span class="muted" style="font-size:0.72rem">Manual refresh (optional).</span>
+          </div>
         </div>
         <div class="wide-wrap">
           <table>
@@ -300,7 +370,7 @@
               <tr>
                 <th class="th-calltime" scope="col">
                   <button type="button" id="btnSortCallTime" title="Toggle sort by call time">
-                    <span>Call time (UTC)</span>
+                    <span>Call time (IST)</span>
                     <span id="callTimeSortInd" aria-hidden="true">↓</span>
                   </button>
                 </th>
@@ -330,7 +400,7 @@
               <tr>
                 <th class="th-calltime" scope="col">
                   <button type="button" id="btnSortCallTimeLong" title="Toggle sort by call time">
-                    <span>Call time (UTC)</span>
+                    <span>Call time (IST)</span>
                     <span id="callTimeSortIndLong" aria-hidden="true">↓</span>
                   </button>
                 </th>
@@ -405,6 +475,41 @@
       return escapeHtml(t.length > m ? t.slice(0, m) + '…' : t);
     }
 
+    /** ISO timestamp from API (UTC) → same instant shown in Asia/Kolkata (IST). */
+    function formatIsoToIST(isoStr) {
+      if (isoStr == null || isoStr === '') return '—';
+      const d = new Date(String(isoStr).trim());
+      if (Number.isNaN(d.getTime())) return '—';
+      return d.toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      }) + ' IST';
+    }
+
+    /** Green/red only on Call time column: BUY green, SELL light red; stop = dark red, target = green bar. */
+    function callTimeCellClass(phase, idirU) {
+      const id = String(idirU || '').toUpperCase();
+      const ph = String(phase || '');
+      if (ph === 'stop_hit') return 'td-calltime td-ct-stoploss';
+      if (ph === 'target_hit') return 'td-calltime td-ct-target';
+      if (id === 'BUY') return 'td-calltime td-ct-buy';
+      if (id === 'SELL') return 'td-calltime td-ct-sell';
+      return 'td-calltime td-ct-neutral';
+    }
+
+    function longCallTimeCellClass(longDirU) {
+      const id = String(longDirU || '').toUpperCase();
+      if (id === 'BUY') return 'td-calltime td-ct-buy';
+      if (id === 'SELL') return 'td-calltime td-ct-sell';
+      return 'td-calltime td-ct-neutral';
+    }
+
     function renderDetail(data) {
       const a = data.analysis || data;
       const intra = a.intraday || {};
@@ -450,8 +555,8 @@
           ${ic.note ? `<div class="muted" style="margin-top:0.35rem">${escapeHtml(ic.note)}</div>` : ''}
         </div>
         <div class="callbox">
-          <div class="muted">Call generated at (UTC)</div>
-          <strong>${when.replace('T', ' ').slice(0, 19)}</strong>
+          <div class="muted">Call generated at (IST)</div>
+          <strong>${escapeHtml(formatIsoToIST(when))}</strong>
           <div class="muted">${a.call_generated_at_note_ist || ''}</div>
           ${a.live_ltp != null ? `<div class="muted">MCX live LTP: <strong>${fmt(a.live_ltp)}</strong> ${a.live_expiry ? '(' + a.live_expiry + ')' : ''}</div>` : ''}
           <div class="muted">${a.intraday_data_note || ''}</div>
@@ -545,27 +650,39 @@
       return tm.length === 5 ? tm + ':00' : tm;
     }
 
+    // Filter boundaries should match the UI’s displayed clock (IST), not the browser timezone.
+    // Convert an IST wall-clock boundary to UTC ms for comparison with ISO timestamps.
+    function istBoundaryMs(dateStr, timeStr, defaultDayStart) {
+      if (!dateStr) return null;
+      const tpart = timePartForParse(timeStr, defaultDayStart);
+      if (!tpart) return null;
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+      if (!m) return null;
+      const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+      const tp = /^(\d{2}):(\d{2}):(\d{2})$/.exec(tpart);
+      if (!tp) return null;
+      const hh = Number(tp[1]), mm = Number(tp[2]), ss = Number(tp[3]);
+      // IST = UTC+05:30
+      const IST_OFFSET_MS = 330 * 60 * 1000;
+      const utcMs = Date.UTC(y, mo - 1, d, hh, mm, ss) - IST_OFFSET_MS;
+      return Number.isFinite(utcMs) ? utcMs : null;
+    }
+
     function localFromBoundaryMs() {
       const d = filterCallFromDate.value;
       if (!d) return null;
       const tm = filterCallFromTime.value;
-      const tpart = timePartForParse(tm, true);
-      const ms = Date.parse(d + 'T' + tpart);
-      return Number.isFinite(ms) ? ms : null;
+      return istBoundaryMs(d, tm, true);
     }
 
     function localToBoundaryMs() {
       const d = filterCallToDate.value;
       if (!d) return null;
       const tm = filterCallToTime.value;
-      if (tm) {
-        const tpart = timePartForParse(tm, false);
-        if (!tpart) return null;
-        const ms = Date.parse(d + 'T' + tpart);
-        return Number.isFinite(ms) ? ms : null;
-      }
-      const ms = Date.parse(d + 'T23:59:59.999');
-      return Number.isFinite(ms) ? ms : null;
+      if (tm) return istBoundaryMs(d, tm, false);
+      // End-of-day IST
+      const ms = istBoundaryMs(d, '23:59:59', false);
+      return Number.isFinite(ms) ? ms + 999 : null;
     }
 
     function passesCallTimeAndProductFilters(s) {
@@ -619,12 +736,21 @@
         return;
       }
       if (!data.length) {
-        rowsIntraday.innerHTML = '<tr><td colspan="12" class="muted">No rows match call time / product filters.</td></tr>';
-        rowsLong.innerHTML = '<tr><td colspan="9" class="muted">No rows match call time / product filters.</td></tr>';
+        const times = signalsCache.map(callTimeMs).filter((x) => x > 0);
+        const minT = times.length ? Math.min(...times) : null;
+        const maxT = times.length ? Math.max(...times) : null;
+        const range = (minT && maxT)
+          ? (' Stored call-time range: ' + escapeHtml(formatIsoToIST(new Date(minT).toISOString()))
+              + ' → ' + escapeHtml(formatIsoToIST(new Date(maxT).toISOString())) + '.')
+          : '';
+        const msg = 'No rows match call time / product filters.' + range + ' Click “Clear filters”.';
+        rowsIntraday.innerHTML = '<tr><td colspan="12" class="muted">' + msg + '</td></tr>';
+        rowsLong.innerHTML = '<tr><td colspan="9" class="muted">' + msg + '</td></tr>';
         return;
       }
       for (const s of data) {
-        const t = s.call_generated_at || s.created_at || '';
+        const tRaw = s.call_generated_at || s.created_at || '';
+        const tIst = formatIsoToIST(tRaw);
         const ij = s.indicators_json && typeof s.indicators_json === 'object' ? s.indicators_json.confidence_scores : null;
         const blended = s.confidence_pct != null ? s.confidence_pct : (ij && ij.blended_pct);
         const phase = s.intraday_live_phase || '';
@@ -637,9 +763,9 @@
         else if (phase === 'target_hit') stClass = 'live-status st-target';
         else if (phase === 'waiting_entry') stClass = 'live-status st-wait';
         const trI = document.createElement('tr');
-        trI.className = phase ? ('phase-' + phase) : '';
+        const idirU = String(s.intraday_direction || '').toUpperCase();
         trI.innerHTML = `
-          <td class="muted">${t.replace('T', ' ').slice(0, 19)}</td>
+          <td class="${callTimeCellClass(phase, idirU)}">${escapeHtml(tIst)}</td>
           <td><strong>${s.mcx_product}</strong></td>
           <td><strong>${s.intraday_confidence_pct != null ? s.intraday_confidence_pct + '%' : '—'}</strong></td>
           <td class="muted">${s.long_term_confidence_pct != null ? s.long_term_confidence_pct + '%' : '—'}</td>
@@ -653,6 +779,7 @@
           <td class="muted" title="${escapeHtml(detail)}">${shortNote(detail, 56)}</td>
         `;
         trI.title = [
+          'Call time: ' + tIst,
           'Intraday: entry ' + fmt(s.intraday_entry) + ' | SL ' + fmt(s.intraday_stop) + ' | T ' + fmt(s.intraday_target),
           detail ? String(detail) : '',
           s.call_scope_label || '',
@@ -662,8 +789,9 @@
         rowsIntraday.appendChild(trI);
 
         const trL = document.createElement('tr');
+        const longDirU = String(s.long_term_direction || s.direction || '').toUpperCase();
         trL.innerHTML = `
-          <td class="muted">${t.replace('T', ' ').slice(0, 19)}</td>
+          <td class="${longCallTimeCellClass(longDirU)}">${escapeHtml(tIst)}</td>
           <td><strong>${s.mcx_product}</strong></td>
           <td class="muted"><strong>${s.long_term_confidence_pct != null ? s.long_term_confidence_pct + '%' : '—'}</strong></td>
           <td>${s.intraday_confidence_pct != null ? s.intraday_confidence_pct + '%' : '—'}</td>
@@ -674,6 +802,7 @@
           <td>${fmt(s.long_term_target)}</td>
         `;
         trL.title = [
+          'Call time: ' + tIst,
           'Swing / daily: entry ' + fmt(s.long_term_entry) + ' | SL ' + fmt(s.long_term_stop) + ' | T ' + fmt(s.long_term_target),
           s.call_scope_label || '',
           s.confidence_explanation || (ij && ij.explanation) || '',
@@ -808,16 +937,18 @@
           callsEl.innerHTML = '';
           return;
         }
-        const t = (last.at || '').replace('T', ' ').slice(0, 19);
+        const t = formatIsoToIST(last.at || '');
         if (!last.ok) {
-          sumEl.textContent = 'Last auto run at ' + t + ' UTC failed: ' + (last.error || 'unknown error');
+          sumEl.textContent = 'Last auto run at ' + t + ' failed: ' + (last.error || 'unknown error');
           callsEl.innerHTML = '';
           return;
         }
         const ac = last.actionable_intraday != null ? last.actionable_intraday : '—';
         const dCnt = last.direction_change_count != null ? last.direction_change_count : (last.direction_changes_vs_previous || []).length;
-        sumEl.textContent = 'Last auto run at ' + t + ' UTC — stored ' + (last.generated_count ?? 0)
-          + ' row(s). Intraday actionable (not NO_TRADE): ' + ac + '. Direction changes vs prior run: ' + dCnt + '.';
+        const ins = last.generated_count != null ? last.generated_count : 0;
+        const sk = last.skipped_count != null ? last.skipped_count : 0;
+        sumEl.textContent = 'Last auto run at ' + t + ' — inserted ' + ins + ' row(s), skipped ' + sk
+          + ' (daily cap). Intraday actionable (not NO_TRADE): ' + ac + '. Direction changes vs prior run: ' + dCnt + '.';
         const sigs = last.signals || [];
         const changes = last.direction_changes_vs_previous || [];
         const actList = last.actionable_intraday_list || [];
@@ -875,10 +1006,15 @@
         if (!r.ok) return;
         const a = await r.json();
         const wr = a.win_rate_pct != null ? a.win_rate_pct + '%' : '— (need target_hit + stop_hit)';
-        el.innerHTML = '<strong>Win rate</strong> (target hit ÷ target+stop resolved): <strong style="color:var(--accent)">' + wr + '</strong>'
-          + ' · target_hit: <strong>' + (a.target_hits ?? 0) + '</strong>, stop_hit: <strong>' + (a.stop_hits ?? 0) + '</strong>'
-          + ', open/pending: ' + (a.open_or_pending ?? 0)
-          + '. ' + escapeHtml(a.methodology_note || '');
+        const meth = a.methodology_note ? '<p class="accuracy-method">' + escapeHtml(a.methodology_note) + '</p>' : '';
+        el.innerHTML = '<p class="accuracy-stats">'
+          + '<strong>Win rate</strong> (target hit ÷ target+stop resolved): '
+          + '<span class="accent-num">' + escapeHtml(wr) + '</span>'
+          + ' · target_hit: <span class="accent-num">' + (a.target_hits ?? 0) + '</span>'
+          + ', stop_hit: <span class="accent-num">' + (a.stop_hits ?? 0) + '</span>'
+          + ', open/pending: <span class="accent-num">' + (a.open_or_pending ?? 0) + '</span>'
+          + ' <span class="muted">(snapshot)</span>.</p>'
+          + meth;
       } catch (e) {
         el.textContent = 'Could not load accuracy.';
       }
@@ -891,12 +1027,11 @@
         const r = await fetch('/api/signals/outcome-schedule', { cache: 'no-store' });
         if (!r.ok) return;
         const s = await r.json();
-        const next = (s.next_run_utc || '').replace('T', ' ').slice(0, 19);
         const on = s.scheduler_enabled !== false;
+        const nextIst = formatIsoToIST(s.next_run_utc || '');
         el.innerHTML = on
-          ? 'Next automated intraday scoring: <strong>' + escapeHtml(next) + ' UTC</strong> · local <strong>'
-            + escapeHtml(s.local_time_label || '') + '</strong> in <strong>' + escapeHtml(s.timezone || '') + '</strong>.'
-          : 'Automated scoring is off (<code>INTRADAY_OUTCOME_SCHEDULER_ENABLED=0</code>). Use the button below or POST <code>/api/signals/evaluate-outcomes</code>.';
+          ? 'Next automated intraday scoring: <span class="next-time">' + escapeHtml(nextIst) + '</span>'
+          : '<span class="muted">Automated scoring is off (<code>INTRADAY_OUTCOME_SCHEDULER_ENABLED=0</code>). Use the button below or POST <code>/api/signals/evaluate-outcomes</code>.</span>';
       } catch (e) {
         el.textContent = '';
       }

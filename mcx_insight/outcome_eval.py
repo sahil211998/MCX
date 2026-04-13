@@ -81,9 +81,9 @@ def intraday_live_status(
     Live snapshot for UI: phase code, short label, detail note, stage number.
 
     Stages:
-      1 — Waiting (BUY only): LTP still below entry; long not “live” yet.
-      2 — Active: in the trade band (stop/target not hit). BUY: also requires LTP ≥ entry.
-         SELL: any LTP between target and stop — short call is live (LTP may be above entry).
+      1 — Waiting (BUY only): LTP still below entry while between stop & target.
+      2 — Active: stop/target not hit. BUY: LTP ≥ entry. SELL: any LTP between target & stop
+         (short “zone” is the whole band; entry is a reference level, not a gate).
       3 — Target hit
       4 — Stoploss hit
 
@@ -142,16 +142,16 @@ def intraday_live_status(
         # Strictly between stop and target: check entry (touch = at or above entry for long).
         if ltpf >= e:
             note = (
-                f"BUY: LTP {ltpf:.4f} ≥ entry {e:.4f} — in trade (between stop {sl:.4f} and target {tg:.4f})."
+                f"BUY: LTP {ltpf:.4f} ≥ entry {e:.4f} (between stop {sl:.4f} and target {tg:.4f})."
             )
-            return "active", "Active — in trade", note, 2
+            return "active", "Active", note, 2
         note = (
             f"BUY: LTP {ltpf:.4f} still below entry {e:.4f}. "
             f"Active when LTP reaches entry or higher (until target {tg:.4f} or stop {sl:.4f})."
         )
-        return "waiting_entry", "Waiting — before entry", note, 1
+        return "waiting_entry", "Waiting for entry", note, 1
 
-    # SELL: between target and stop = active call (LTP can be above or below entry; short is “on” in the band).
+    # SELL: whole band (target < LTP < stop) is the live short zone — no entry gate (unlike long).
     if ltpf >= sl:
         note = f"LTP {ltpf:.4f} ≥ stop {sl:.4f} (target {tg:.4f})."
         return "stop_hit", "Stoploss hit", note, 4
@@ -159,6 +159,7 @@ def intraday_live_status(
         note = f"LTP {ltpf:.4f} ≤ target {tg:.4f} (entry {e:.4f}, stop {sl:.4f})."
         return "target_hit", "Target hit", note, 3
     note = (
-        f"SELL: LTP {ltpf:.4f} in trade band (entry {e:.4f}, target {tg:.4f}, stop {sl:.4f}) — active vs stop/target."
+        f"SELL: LTP {ltpf:.4f} between target {tg:.4f} and stop {sl:.4f} "
+        f"(entry reference {e:.4f})."
     )
-    return "active", "Active — in trade", note, 2
+    return "active", "Active", note, 2
