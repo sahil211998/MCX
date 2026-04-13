@@ -71,6 +71,27 @@ def _classify_trend(close: float, ema_slow: float, atr: float) -> TrendLabel:
     return "Bullish" if close > ema_slow else "Bearish"
 
 
+def _trend_filter_ok(row: pd.Series, direction: Direction) -> bool:
+    """
+    Trend alignment using EMA50:
+    - BUY preferred when close is above EMA50
+    - SELL preferred when close is below EMA50
+    """
+    k = f"ema_{config.EMA_TREND}"
+    if k not in row:
+        return True
+    try:
+        ema50 = float(row[k])
+        close = float(row["close"])
+    except Exception:
+        return True
+    if direction == "BUY":
+        return close >= ema50
+    if direction == "SELL":
+        return close <= ema50
+    return True
+
+
 def _pattern_tags(
     df: pd.DataFrame,
     row: pd.Series,
@@ -207,7 +228,7 @@ def generate_smart_signal(
     """Confluence-based call; enforces minimum risk:reward before BUY/SELL."""
     min_rr = min_rr if min_rr is not None else float(config.TARGET_RISK_REWARD)
     df0 = _normalize_ohlcv(ohlcv)
-    if df0.empty or len(df0) < max(config.EMA_SLOW, 26, 20) + 3:
+    if df0.empty or len(df0) < max(config.EMA_TREND, 26, 20) + 3:
         return SmartSignal(
             symbol_key=symbol_key,
             mcx_product=mcx_product,
@@ -289,6 +310,7 @@ def generate_smart_signal(
         "macd_hist": round(float(row["macd_hist"]), 6),
         "ema_fast": round(float(row[f"ema_{config.EMA_FAST}"]), 4),
         "ema_slow": round(float(row[f"ema_{config.EMA_SLOW}"]), 4),
+        "ema_trend": round(float(row[f"ema_{config.EMA_TREND}"]), 4),
         "atr": round(atr, 4),
         "trend": trend,
         "volume_vs_sma20": None,
@@ -297,6 +319,25 @@ def generate_smart_signal(
     vs = row.get("vol_sma20")
     if vol is not None and vs is not None and pd.notna(vs) and float(vs) > 0:
         ind["volume_vs_sma20"] = round(float(vol) / float(vs), 3)
+
+    # Trend filter: avoid counter-trend buys/sells vs EMA50 unless user disables via env in future.
+    if not _trend_filter_ok(row, direction):
+        ind["trend_filter"] = f"close vs EMA{config.EMA_TREND} not aligned"
+        return SmartSignal(
+            symbol_key=symbol_key,
+            mcx_product=mcx_product,
+            direction="NO_TRADE",
+            timeframe=timeframe,
+            entry=entry,
+            target=target,
+            stop_loss=stop,
+            risk_reward=rr,
+            confidence_pct=_confidence(row, "NO_TRADE", 0),
+            trend=trend,
+            pattern_summary="Trend filter (EMA50) not aligned",
+            indicators=ind,
+            rationale=f"Filtered: direction {direction} not aligned with EMA{config.EMA_TREND} trend context.",
+        )
 
     conf = _confidence(row, direction, len(tags))
 

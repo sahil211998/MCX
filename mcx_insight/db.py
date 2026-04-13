@@ -6,7 +6,10 @@ import os
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
-from zoneinfo import ZoneInfo
+try:
+    from zoneinfo import ZoneInfo  # py3.9+
+except Exception:  # pragma: no cover
+    from backports.zoneinfo import ZoneInfo  # type: ignore
 
 if TYPE_CHECKING:
     from mcx_insight.strategy import TradeLevels
@@ -48,12 +51,17 @@ def connect_pg(cfg: Optional[PgConfig] = None):
     if psycopg2 is None:
         raise RuntimeError("psycopg2 is not installed. pip install psycopg2-binary")
     c = cfg or pg_config_from_env()
+    try:
+        connect_timeout = int(os.environ.get("PGCONNECT_TIMEOUT", "5"))
+    except ValueError:
+        connect_timeout = 5
     return psycopg2.connect(
         host=c.host,
         port=c.port,
         dbname=c.dbname,
         user=c.user,
         password=c.password,
+        connect_timeout=max(2, min(connect_timeout, 30)),
     )
 
 

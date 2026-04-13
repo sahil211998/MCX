@@ -4,6 +4,8 @@ international futures (COMEX/NYMEX) as *proxies* for directional context.
 Treat outputs as research only, not trade recommendations.
 """
 
+from __future__ import annotations
+
 import os
 from dataclasses import dataclass
 from typing import List
@@ -104,8 +106,10 @@ LONG_TERM_YF_PERIOD = _env_str("MCX_LONG_TERM_YF_PERIOD", "730d")
 LONG_TERM_MIN_BARS = 45
 
 # Strategy defaults (tunable)
-EMA_FAST = 9
-EMA_SLOW = 21
+# Common trader set: 10/20 for momentum + 50 for trend filter.
+EMA_FAST = 10
+EMA_SLOW = 20
+EMA_TREND = 50
 RSI_PERIOD = 14
 ATR_PERIOD = 14
 ATR_STOP_MULTIPLIER = 1.8  # wider than 1.0 → fewer noise stop-outs, larger $ risk per lot

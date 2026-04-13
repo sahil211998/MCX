@@ -4,7 +4,10 @@ import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Optional
-from zoneinfo import ZoneInfo
+try:
+    from zoneinfo import ZoneInfo  # py3.9+
+except Exception:  # pragma: no cover
+    from backports.zoneinfo import ZoneInfo  # type: ignore
 
 import mcxlib
 import pandas as pd

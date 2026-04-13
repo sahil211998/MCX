@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: mcx
+      POSTGRES_USER: mcx_user
+      POSTGRES_PASSWORD: mcx_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - mcx_pgdata:/var/lib/postgresql/data
+
+  web:
+    build: .
+    depends_on:
+      - db
+    environment:
+      PGHOST: db
+      PGPORT: "5432"
+      PGDATABASE: mcx
+      PGUSER: mcx_user
+      PGPASSWORD: mcx_pass
+
+      # Optional app toggles (safe defaults)
+      AUTO_SIGNAL_ENABLED: "1"
+      AUTO_SIGNAL_INTERVAL_SECS: "120"
+      AUTO_SIGNAL_ONLY_AFTER_RESOLUTION: "1"
+      AUTO_SIGNAL_MAX_NEW_CALLS_PER_PRODUCT_PER_DAY: "1"
+      INTRADAY_OUTCOME_TZ: Asia/Kolkata
+      INTRADAY_OUTCOME_LOCAL_HOUR: "23"
+      INTRADAY_OUTCOME_LOCAL_MINUTE: "25"
+      PGCONNECT_TIMEOUT: "5"
+    ports:
+      - "8000:8000"
+
+volumes:
+  mcx_pgdata:
+

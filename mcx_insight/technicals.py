@@ -60,6 +60,7 @@ def enrich_indicators(df: pd.DataFrame) -> pd.DataFrame:
     c = out["close"]
     out[f"ema_{config.EMA_FAST}"] = ema(c, config.EMA_FAST)
     out[f"ema_{config.EMA_SLOW}"] = ema(c, config.EMA_SLOW)
+    out[f"ema_{config.EMA_TREND}"] = ema(c, config.EMA_TREND)
     out["rsi"] = rsi(c, config.RSI_PERIOD)
     out["atr"] = atr(out, config.ATR_PERIOD)
     return out

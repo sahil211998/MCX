@@ -17,11 +17,15 @@ from functools import partial
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
+try:
+    from zoneinfo import ZoneInfo  # py3.9+
+except Exception:  # pragma: no cover
+    from backports.zoneinfo import ZoneInfo  # type: ignore
 
 from fastapi import FastAPI, HTTPException, Header, Query, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import Response as StarletteResponse
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -44,6 +48,7 @@ from mcx_insight.db import (  # noqa: E402
     truncate_all_mcx_app_data,
 )
 from mcx_insight.dual_horizon import run_dual_analysis  # noqa: E402
+from mcx_insight.charting import ChartSpec, render_call_chart_png  # noqa: E402
 from mcx_insight.mcx_data import live_quote  # noqa: E402
 from mcx_insight.outcome_eval import intraday_live_status  # noqa: E402
 
@@ -628,6 +633,67 @@ def api_accuracy() -> dict[str, Any]:
     try:
         ensure_schema(conn)
         return fetch_accuracy_summary(conn, products=tuple(SIGNAL_ONLY_MCX_PRODUCTS))
+    finally:
+        conn.close()
+
+
+@app.get("/api/chart/{mcx_product}.png")
+def api_chart_png(
+    mcx_product: str,
+    h: str = Query(default="intraday", description="intraday | long | daily"),
+) -> StarletteResponse:
+    """Server-rendered chart PNG for the latest stored call (overlays show indicator basis + levels)."""
+    prod = mcx_product.strip().upper()
+    if prod not in SIGNAL_ONLY_MCX_SET:
+        raise HTTPException(400, "Invalid product code")
+    horizon = (h or "intraday").strip().lower()
+    if horizon not in ("intraday", "long", "daily"):
+        raise HTTPException(400, "Invalid horizon (use intraday|long|daily)")
+
+    try:
+        conn = connect_pg()
+    except Exception as e:
+        raise HTTPException(503, f"Database unavailable: {e}") from e
+    try:
+        ensure_schema(conn)
+        rows = fetch_latest_signals(conn, limit=1, mcx_products_only=[prod])
+        if not rows:
+            raise HTTPException(404, "No stored calls for this product yet")
+        r = rows[0]
+        ij = r.get("indicators_json") if isinstance(r.get("indicators_json"), dict) else {}
+        proxy_scale = None
+        try:
+            if isinstance(ij, dict):
+                # dual_horizon stores proxy scale under indicators_json['intraday']['proxy_to_mcx_scale']
+                intra = ij.get("intraday") if isinstance(ij.get("intraday"), dict) else None
+                if intra and intra.get("proxy_to_mcx_scale") is not None:
+                    proxy_scale = float(intra.get("proxy_to_mcx_scale"))
+        except Exception:
+            proxy_scale = None
+        if horizon == "intraday":
+            entry = r.get("intraday_entry")
+            stop = r.get("intraday_stop")
+            target = r.get("intraday_target")
+        else:
+            # daily/long: show primary snapshot levels
+            entry = r.get("entry_price")
+            stop = r.get("stop_loss")
+            target = r.get("target_price")
+        spec = ChartSpec(
+            mcx_product=prod,
+            horizon=horizon,  # type: ignore[arg-type]
+            entry=float(entry) if entry is not None else None,
+            stop=float(stop) if stop is not None else None,
+            target=float(target) if target is not None else None,
+            proxy_to_mcx_scale=proxy_scale,
+            call_time_iso=str(r.get("call_generated_at") or r.get("created_at") or "") or None,
+        )
+        png = render_call_chart_png(spec)
+        return StarletteResponse(content=png, media_type="image/png")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"Chart render failed: {e}") from e
     finally:
         conn.close()
 

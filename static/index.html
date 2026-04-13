@@ -764,6 +764,8 @@
         else if (phase === 'waiting_entry') stClass = 'live-status st-wait';
         const trI = document.createElement('tr');
         const idirU = String(s.intraday_direction || '').toUpperCase();
+        const chartHref = '/api/chart/' + encodeURIComponent(String(s.mcx_product || '')) + '.png?h=intraday';
+        const chartHrefDaily = '/api/chart/' + encodeURIComponent(String(s.mcx_product || '')) + '.png?h=daily';
         trI.innerHTML = `
           <td class="${callTimeCellClass(phase, idirU)}">${escapeHtml(tIst)}</td>
           <td><strong>${s.mcx_product}</strong></td>
@@ -776,7 +778,11 @@
           <td>${fmt(s.intraday_target)}</td>
           <td class="muted">${s.intraday_live_ltp != null ? fmt(s.intraday_live_ltp) : '—'}</td>
           <td class="${stClass}">${escapeHtml(statusLabel)}</td>
-          <td class="muted" title="${escapeHtml(detail)}">${shortNote(detail, 56)}</td>
+          <td class="muted" title="${escapeHtml(detail)}">
+            <a class="muted" href="${chartHref}" target="_blank" rel="noreferrer">Chart</a>
+            <span class="muted"> · </span>
+            <a class="muted" href="${chartHrefDaily}" target="_blank" rel="noreferrer">Daily</a>
+          </td>
         `;
         trI.title = [
           'Call time: ' + tIst,
