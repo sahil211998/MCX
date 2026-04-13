@@ -5,15 +5,21 @@ services:
       POSTGRES_DB: mcx
       POSTGRES_USER: mcx_user
       POSTGRES_PASSWORD: mcx_pass
-    ports:
-      - "5432:5432"
+    # No host port published (avoids conflicts with local Postgres).
+    # The web container connects to this DB over the internal compose network at host `db:5432`.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mcx_user -d mcx -h 127.0.0.1 -p 5432"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
     volumes:
       - mcx_pgdata:/var/lib/postgresql/data
 
   web:
     build: .
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     environment:
       PGHOST: db
       PGPORT: "5432"
@@ -30,6 +36,7 @@ services:
       INTRADAY_OUTCOME_LOCAL_HOUR: "23"
       INTRADAY_OUTCOME_LOCAL_MINUTE: "25"
       PGCONNECT_TIMEOUT: "5"
+    restart: unless-stopped
     ports:
       - "8000:8000"
 
