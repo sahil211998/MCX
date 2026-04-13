@@ -59,6 +59,24 @@ _auto_run_history: deque[dict[str, Any]] = deque(maxlen=30)
 _auto_worker_lock = asyncio.Lock()
 # Serialize count-then-insert so two concurrent writers cannot both see “0 rows today” and insert twice.
 _signal_write_lock = threading.Lock()
+_schema_ready = False
+_schema_lock = threading.Lock()
+
+
+def _ensure_schema_once() -> None:
+    """Run DB DDL once per process to avoid DDL/INSERT deadlocks."""
+    global _schema_ready
+    if _schema_ready:
+        return
+    with _schema_lock:
+        if _schema_ready:
+            return
+        conn = connect_pg()
+        try:
+            ensure_schema(conn)
+        finally:
+            conn.close()
+        _schema_ready = True
 
 
 def _signal_calendar_tz_name() -> str:
@@ -259,9 +277,9 @@ def next_intraday_outcome_run_utc() -> datetime:
 
 def _sync_refresh_intraday_outcomes() -> dict[str, Any]:
     """Blocking DB + LTP refresh; used by the nightly scheduler and optional manual POST."""
+    _ensure_schema_once()
     conn = connect_pg()
     try:
-        ensure_schema(conn)
         return refresh_smart_signal_outcomes(
             conn,
             limit=800,
@@ -346,6 +364,7 @@ def _direction_changes_vs_previous(
 def _sync_auto_generate_batch(previous_signals: list[dict[str, Any]] | None) -> dict[str, Any]:
     """Blocking: full six-product insert; used from background worker thread."""
     at = datetime.now(timezone.utc).isoformat()
+    _ensure_schema_once()
     conn = None
     try:
         conn = connect_pg()
@@ -364,7 +383,6 @@ def _sync_auto_generate_batch(previous_signals: list[dict[str, Any]] | None) -> 
             "has_previous_cycle": False,
         }
     try:
-        ensure_schema(conn)
         generated = _generate_all_six(conn, days=90, pause=0.04, respect_daily_cap=True)
         inserted = [g for g in generated if not g.get("skipped")]
         skipped_n = sum(1 for g in generated if g.get("skipped"))
@@ -438,6 +456,10 @@ async def _auto_signal_worker() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     tasks: list[asyncio.Task[Any]] = []
+    try:
+        _ensure_schema_once()
+    except Exception:
+        logger.exception("startup schema ensure failed")
     if _auto_signal_enabled():
         tasks.append(asyncio.create_task(_auto_signal_worker()))
     if _outcome_scheduler_enabled():
@@ -541,12 +563,12 @@ def api_analyze_commodity(
     payload = dual.to_api()
     new_id: int | None = None
     if store:
+        _ensure_schema_once()
         try:
             conn = connect_pg()
         except Exception as e:
             raise HTTPException(503, f"Database unavailable: {e}") from e
         try:
-            ensure_schema(conn)
             with _signal_write_lock:
                 new_id = insert_dual_horizon_signal(conn, dual.to_db_row(), disclaimer=dual.disclaimer)
         finally:
@@ -569,12 +591,12 @@ def api_signals(
 ) -> list[dict[str, Any]]:
     """Newest calls first (DB order); `Cache-Control: no-store` avoids stale browser caching."""
     response.headers["Cache-Control"] = "no-store, max-age=0"
+    _ensure_schema_once()
     try:
         conn = connect_pg()
     except Exception as e:
         raise HTTPException(503, f"Database unavailable: {e}") from e
     try:
-        ensure_schema(conn)
         rows = fetch_latest_signals(
             conn,
             limit=max(1, min(limit, 200)),
@@ -606,12 +628,12 @@ def api_outcome_schedule() -> dict[str, Any]:
 @app.post("/api/signals/evaluate-outcomes")
 def api_evaluate_outcomes(limit: int = 600) -> dict[str, Any]:
     """Manual re-score: intraday target/stop vs MCX watch LTP. Normally runs on the daily schedule only."""
+    _ensure_schema_once()
     try:
         conn = connect_pg()
     except Exception as e:
         raise HTTPException(503, f"Database unavailable: {e}") from e
     try:
-        ensure_schema(conn)
         stats = refresh_smart_signal_outcomes(
             conn,
             limit=max(50, min(limit, 2000)),
@@ -626,12 +648,12 @@ def api_evaluate_outcomes(limit: int = 600) -> dict[str, Any]:
 @app.get("/api/signals/accuracy")
 def api_accuracy() -> dict[str, Any]:
     """Rolling accuracy from stored outcomes (see methodology_note)."""
+    _ensure_schema_once()
     try:
         conn = connect_pg()
     except Exception as e:
         raise HTTPException(503, f"Database unavailable: {e}") from e
     try:
-        ensure_schema(conn)
         return fetch_accuracy_summary(conn, products=tuple(SIGNAL_ONLY_MCX_PRODUCTS))
     finally:
         conn.close()
@@ -650,12 +672,12 @@ def api_chart_png(
     if horizon not in ("intraday", "long", "daily"):
         raise HTTPException(400, "Invalid horizon (use intraday|long|daily)")
 
+    _ensure_schema_once()
     try:
         conn = connect_pg()
     except Exception as e:
         raise HTTPException(503, f"Database unavailable: {e}") from e
     try:
-        ensure_schema(conn)
         rows = fetch_latest_signals(conn, limit=1, mcx_products_only=[prod])
         if not rows:
             raise HTTPException(404, "No stored calls for this product yet")
@@ -715,12 +737,12 @@ def api_auto_status() -> dict[str, Any]:
 @app.post("/api/signals/generate")
 def api_generate(days: int = 80, pause: float = 0.04) -> dict[str, Any]:
     """Batch dual-horizon signals for the six allowed mini/gas contracts only."""
+    _ensure_schema_once()
     try:
         conn = connect_pg()
     except Exception as e:
         raise HTTPException(503, f"Database unavailable: {e}") from e
     try:
-        ensure_schema(conn)
         generated = _generate_all_six(conn, days, pause)
         return {"ok": True, "signals": generated}
     finally:
@@ -741,6 +763,7 @@ def api_reset_and_generate(
     Truncate all `mcx_smart_signals` and `mcx_trade_levels` rows, then run the same batch as `/api/signals/generate`.
     If env `MCX_SIGNAL_RESET_KEY` is set, send it as header `X-Reset-Key` or query `reset_key`.
     """
+    _ensure_schema_once()
     expected = os.environ.get("MCX_SIGNAL_RESET_KEY")
     provided = (x_reset_key or reset_key or "").strip()
     if expected:
@@ -754,7 +777,6 @@ def api_reset_and_generate(
     except Exception as e:
         raise HTTPException(503, f"Database unavailable: {e}") from e
     try:
-        ensure_schema(conn)
         truncate_all_mcx_app_data(conn)
         generated = _generate_all_six(conn, days, pause)
         return {

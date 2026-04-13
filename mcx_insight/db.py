@@ -222,6 +222,12 @@ def insert_dual_horizon_signal(conn, row: dict, disclaimer: str | None = None) -
         "call_scope_label": row.get("call_scope_label"),
     }
     with conn.cursor() as cur:
+        # Serialize inserts with schema DDL across all processes/instances.
+        # ensure_schema() uses the same advisory keys.
+        cur.execute(
+            "SELECT pg_advisory_xact_lock(%s, %s)",
+            (_SCHEMA_ADV_LOCK_KEY1, _SCHEMA_ADV_LOCK_KEY2),
+        )
         cur.execute(
             """
             INSERT INTO mcx_smart_signals (
@@ -285,6 +291,10 @@ def insert_trade_levels(
         exp = live_quote.expiry
     with conn.cursor() as cur:
         cur.execute(
+            "SELECT pg_advisory_xact_lock(%s, %s)",
+            (_SCHEMA_ADV_LOCK_KEY1, _SCHEMA_ADV_LOCK_KEY2),
+        )
+        cur.execute(
             """
             INSERT INTO mcx_trade_levels (
                 symbol_key, mcx_product, bias,
@@ -337,6 +347,10 @@ def insert_smart_signal(conn, row: dict, disclaimer: str | None = None) -> int:
         "ind_js": ind_js,
     }
     with conn.cursor() as cur:
+        cur.execute(
+            "SELECT pg_advisory_xact_lock(%s, %s)",
+            (_SCHEMA_ADV_LOCK_KEY1, _SCHEMA_ADV_LOCK_KEY2),
+        )
         cur.execute(
             """
             INSERT INTO mcx_smart_signals (
