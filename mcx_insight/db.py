@@ -150,6 +150,8 @@ def _migrate_smart_signals_dual_columns(cur) -> None:
         "ALTER TABLE mcx_smart_signals ADD COLUMN IF NOT EXISTS outcome_eval_note TEXT",
         "ALTER TABLE mcx_smart_signals ADD COLUMN IF NOT EXISTS outcome_evaluated_at TIMESTAMPTZ",
         "ALTER TABLE mcx_smart_signals ADD COLUMN IF NOT EXISTS outcome_eval_ltp DOUBLE PRECISION",
+        "ALTER TABLE mcx_smart_signals ADD COLUMN IF NOT EXISTS intraday_activated_at TIMESTAMPTZ",
+        "ALTER TABLE mcx_smart_signals ADD COLUMN IF NOT EXISTS intraday_activated_ltp DOUBLE PRECISION",
     ]
     for sql in stmts:
         cur.execute(sql)
@@ -542,6 +544,7 @@ def fetch_latest_signals(
         "confidence_pct, trend, pattern_summary, indicators_json, "
         "rationale, created_at, outcome, "
         "outcome_eval_note, outcome_evaluated_at, outcome_eval_ltp, "
+        "intraday_activated_at, intraday_activated_ltp, "
         "call_generated_at, intraday_interval, intraday_direction, "
         "intraday_entry, intraday_stop, intraday_target, "
         "intraday_risk_reward, intraday_confidence_pct, "
@@ -587,3 +590,20 @@ def fetch_latest_signals(
                     pass
             out.append(row)
         return out
+
+
+def mark_intraday_activated(conn, *, signal_id: int, ltp: float | None) -> None:
+    """Persist activation latch so BUY doesn't flip back to waiting."""
+    from datetime import datetime, timezone
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE mcx_smart_signals
+            SET intraday_activated_at = COALESCE(intraday_activated_at, %s),
+                intraday_activated_ltp = COALESCE(intraday_activated_ltp, %s)
+            WHERE id = %s
+            """,
+            (datetime.now(timezone.utc), float(ltp) if ltp is not None else None, int(signal_id)),
+        )
+    conn.commit()

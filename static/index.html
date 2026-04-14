@@ -159,6 +159,65 @@
     .live-status.st-target { color: #86efac; }
     .live-status.st-wait { color: var(--flat); }
     .live-status.st-muted { color: var(--muted); font-weight: 600; }
+    /* Chart modal */
+    .modal-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.62);
+      display: none;
+      align-items: center; justify-content: center;
+      padding: 1rem;
+      z-index: 9999;
+    }
+    .modal-backdrop.show { display: flex; }
+    .modal {
+      width: min(1080px, 96vw);
+      background: #0f172a;
+      border: 1px solid #243044;
+      border-radius: 14px;
+      box-shadow: 0 22px 80px rgba(0,0,0,0.55);
+      overflow: hidden;
+    }
+    .modal-header {
+      display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+      padding: 0.7rem 0.85rem;
+      background: #0b1220;
+      border-bottom: 1px solid #243044;
+    }
+    .modal-title { font-weight: 700; font-size: 0.9rem; color: var(--text); }
+    .modal-actions { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+    .modal-actions button {
+      border: 1px solid #334155;
+      background: #131c2b;
+      color: var(--text);
+      padding: 0.35rem 0.6rem;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 0.78rem;
+      cursor: pointer;
+    }
+    .modal-actions button.active { border-color: var(--accent); color: var(--accent); }
+    .modal-actions button:hover { border-color: var(--accent); }
+    .modal-actions .btn-close { color: var(--muted); font-weight: 800; }
+    .modal-body { position: relative; background: #0f172a; overflow: auto; max-height: calc(90vh - 52px); }
+    .modal-body img { width: 100%; height: auto; display: block; }
+    .modal-loading {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(15, 23, 42, 0.65);
+      color: var(--muted);
+      font-size: 0.85rem;
+      opacity: 0;
+      transition: opacity 120ms ease;
+      pointer-events: none;
+    }
+    .modal-loading.show { opacity: 1; }
+    .modal-footnote {
+      padding: 0.55rem 0.85rem;
+      border-top: 1px solid #243044;
+      color: var(--muted);
+      font-size: 0.75rem;
+      background: #0b1220;
+    }
     #status { font-size: 0.88rem; color: var(--muted); }
     .wide-wrap { overflow-x: auto; }
     .hidden { display: none; }
@@ -779,9 +838,9 @@
           <td class="muted">${s.intraday_live_ltp != null ? fmt(s.intraday_live_ltp) : '—'}</td>
           <td class="${stClass}">${escapeHtml(statusLabel)}</td>
           <td class="muted" title="${escapeHtml(detail)}">
-            <a class="muted" href="${chartHref}" target="_blank" rel="noreferrer">Chart</a>
+            <a class="muted" href="${chartHref}" data-chart="intraday">Chart</a>
             <span class="muted"> · </span>
-            <a class="muted" href="${chartHrefDaily}" target="_blank" rel="noreferrer">Daily</a>
+            <a class="muted" href="${chartHrefDaily}" data-chart="daily">Daily</a>
           </td>
         `;
         trI.title = [
@@ -1057,6 +1116,105 @@
       });
     }
 
+    // Chart modal (popup)
+    const chartModalBackdrop = document.getElementById('chartModalBackdrop');
+    const chartModalTitle = document.getElementById('chartModalTitle');
+    const chartModalLoading = document.getElementById('chartModalLoading');
+    const chartModalImg = document.getElementById('chartModalImg');
+    const btnChartTabIntraday = document.getElementById('btnChartTabIntraday');
+    const btnChartTabDaily = document.getElementById('btnChartTabDaily');
+    const btnChartClose = document.getElementById('btnChartClose');
+    let _chartModalProduct = null;
+    let _chartModalUrlIntraday = null;
+    let _chartModalUrlDaily = null;
+    let _chartAbort = null;
+    let _chartObjUrl = null;
+
+    function closeChartModal() {
+      if (_chartAbort) { try { _chartAbort.abort(); } catch (e) {} }
+      _chartAbort = null;
+      if (_chartObjUrl) { try { URL.revokeObjectURL(_chartObjUrl); } catch (e) {} }
+      _chartObjUrl = null;
+      if (chartModalImg) chartModalImg.removeAttribute('src');
+      if (chartModalLoading) chartModalLoading.classList.remove('show');
+      if (chartModalBackdrop) chartModalBackdrop.classList.remove('show');
+    }
+
+    async function _loadChartIntoImg(url) {
+      if (!chartModalImg || !chartModalLoading) return;
+      chartModalLoading.classList.add('show');
+      if (_chartAbort) { try { _chartAbort.abort(); } catch (e) {} }
+      _chartAbort = new AbortController();
+      const t0 = performance.now();
+      try {
+        // Fetch as blob so we can display even if response headers are odd.
+        // Backend caches the PNG; use no-store so browser won't hold stale images.
+        const u = url + (url.includes('?') ? '&' : '?') + 'ts=' + Date.now();
+        const r = await fetch(u, { cache: 'no-store', signal: _chartAbort.signal });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const blob = await r.blob();
+        if (!blob || !blob.size) throw new Error('Empty image');
+        if (_chartObjUrl) { try { URL.revokeObjectURL(_chartObjUrl); } catch (e) {} }
+        _chartObjUrl = URL.createObjectURL(blob);
+        chartModalImg.onload = () => { chartModalLoading.classList.remove('show'); };
+        chartModalImg.onerror = () => { chartModalLoading.classList.remove('show'); };
+        chartModalImg.src = _chartObjUrl;
+      } catch (e) {
+        chartModalLoading.classList.remove('show');
+        chartModalImg.removeAttribute('src');
+        if (chartModalTitle) chartModalTitle.textContent = (_chartModalProduct || 'Chart') + ' · failed to load';
+      } finally {
+        const dt = performance.now() - t0;
+        // If cached, this is usually < 1000ms.
+        if (chartModalTitle && dt < 1500) chartModalTitle.textContent = String(_chartModalProduct || 'Chart') + ' · ' + Math.round(dt) + 'ms';
+      }
+    }
+
+    function openChartModal(product, urlIntraday, urlDaily, which) {
+      _chartModalProduct = product || 'Chart';
+      _chartModalUrlIntraday = urlIntraday;
+      _chartModalUrlDaily = urlDaily;
+      if (chartModalTitle) chartModalTitle.textContent = String(_chartModalProduct);
+      if (btnChartTabIntraday) btnChartTabIntraday.classList.toggle('active', which !== 'daily');
+      if (btnChartTabDaily) btnChartTabDaily.classList.toggle('active', which === 'daily');
+      if (chartModalBackdrop) chartModalBackdrop.classList.add('show');
+      // Start loading immediately
+      _loadChartIntoImg(which === 'daily' ? _chartModalUrlDaily : _chartModalUrlIntraday);
+    }
+
+    if (btnChartTabIntraday) btnChartTabIntraday.addEventListener('click', () => {
+      btnChartTabIntraday.classList.add('active');
+      if (btnChartTabDaily) btnChartTabDaily.classList.remove('active');
+      if (_chartModalUrlIntraday) _loadChartIntoImg(_chartModalUrlIntraday);
+    });
+    if (btnChartTabDaily) btnChartTabDaily.addEventListener('click', () => {
+      btnChartTabDaily.classList.add('active');
+      if (btnChartTabIntraday) btnChartTabIntraday.classList.remove('active');
+      if (_chartModalUrlDaily) _loadChartIntoImg(_chartModalUrlDaily);
+    });
+    if (btnChartClose) btnChartClose.addEventListener('click', closeChartModal);
+    if (chartModalBackdrop) chartModalBackdrop.addEventListener('click', (e) => {
+      if (e.target === chartModalBackdrop) closeChartModal();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && chartModalBackdrop && chartModalBackdrop.classList.contains('show')) closeChartModal();
+    });
+
+    // Intercept table chart clicks and open modal
+    document.addEventListener('click', (e) => {
+      const a = e.target && e.target.closest ? e.target.closest('a[data-chart]') : null;
+      if (!a) return;
+      const href = a.getAttribute('href') || '';
+      if (!href.startsWith('/api/chart/')) return;
+      e.preventDefault();
+      const td = a.closest('tr');
+      const prod = td ? (td.querySelector('td:nth-child(2) strong')?.textContent || '') : '';
+      const base = '/api/chart/' + encodeURIComponent(String(prod || '').trim().toUpperCase()) + '.png';
+      const uIntra = base + '?h=intraday';
+      const uDaily = base + '?h=daily';
+      openChartModal(prod || 'Chart', uIntra, uDaily, a.dataset.chart || 'intraday');
+    });
+
     loadCatalog();
     loadSignals();
     loadAutoStatus();
@@ -1074,5 +1232,25 @@
       }
     });
   </script>
+  <!-- Chart modal -->
+  <div id="chartModalBackdrop" class="modal-backdrop" role="dialog" aria-modal="true" aria-label="Chart">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title" id="chartModalTitle">Chart</div>
+        <div class="modal-actions">
+          <button type="button" id="btnChartTabIntraday" class="active">Intraday</button>
+          <button type="button" id="btnChartTabDaily">Daily</button>
+          <button type="button" id="btnChartClose" class="btn-close">Close</button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div id="chartModalLoading" class="modal-loading">Loading chart…</div>
+        <img id="chartModalImg" alt="Chart" />
+      </div>
+      <div class="modal-footnote" id="chartModalNote">
+        Tip: first load may take longer; repeats are cached.
+      </div>
+    </div>
+  </div>
 </body>
 </html>

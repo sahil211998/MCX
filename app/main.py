@@ -43,6 +43,7 @@ from mcx_insight.db import (  # noqa: E402
     ensure_schema,
     fetch_accuracy_summary,
     fetch_latest_signals,
+    mark_intraday_activated,
     insert_dual_horizon_signal,
     refresh_smart_signal_outcomes,
     truncate_all_mcx_app_data,
@@ -488,7 +489,7 @@ def _serialize_signal(row: dict) -> dict[str, Any]:
     return r
 
 
-def _enrich_signals_live_status(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _enrich_signals_live_status(rows: list[dict[str, Any]], *, conn=None) -> list[dict[str, Any]]:
     """Attach MCX watch LTP and live intraday phase (active / waiting / stop / target) per row."""
     products = {str(r.get("mcx_product") or "").strip().upper() for r in rows if r.get("mcx_product")}
     quotes: dict[str, Any] = {}
@@ -517,6 +518,18 @@ def _enrich_signals_live_status(rows: list[dict[str, Any]]) -> list[dict[str, An
             target=s.get("intraday_target"),
             ltp=ltp,
         )
+        # Activation latch: once Active even once, never go back to Waiting.
+        activated_at = s.get("intraday_activated_at")
+        if phase == "waiting_entry" and activated_at:
+            phase, label, stage = "active", "Active", 2
+            detail = (detail or "") + " (latched active)"
+        if phase == "active" and not activated_at and conn is not None and s.get("id"):
+            try:
+                mark_intraday_activated(conn, signal_id=int(s["id"]), ltp=ltp)
+                s["intraday_activated_at"] = datetime.now(timezone.utc).isoformat()
+                s["intraday_activated_ltp"] = ltp
+            except Exception:
+                pass
         s["intraday_live_ltp"] = ltp
         s["intraday_live_phase"] = phase
         s["intraday_status_label"] = label
@@ -602,7 +615,7 @@ def api_signals(
             limit=max(1, min(limit, 200)),
             mcx_products_only=list(SIGNAL_ONLY_MCX_SET),
         )
-        return _enrich_signals_live_status(rows)
+        return _enrich_signals_live_status(rows, conn=conn)
     finally:
         conn.close()
 

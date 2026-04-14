@@ -7,6 +7,7 @@ This is a **snapshot check**, not a tick-accurate “which traded first” study
 from __future__ import annotations
 
 import math
+import os
 from typing import Any
 
 
@@ -139,10 +140,17 @@ def intraday_live_status(
         if ltpf >= tg:
             note = f"LTP {ltpf:.4f} ≥ target {tg:.4f} (entry {e:.4f}, stop {sl:.4f})."
             return "target_hit", "Target hit", note, 3
-        # Strictly between stop and target: check entry (touch = at or above entry for long).
-        if ltpf >= e:
+        # Strictly between stop and target: check entry (with hysteresis so status doesn't flip on tiny dips).
+        try:
+            hyst_pct = float(os.environ.get("INTRADAY_ENTRY_HYSTERESIS_PCT", "0.0015"))
+        except ValueError:
+            hyst_pct = 0.0015
+        hyst_pct = max(0.0, min(hyst_pct, 0.02))
+        entry_gate = e * (1.0 - hyst_pct)
+        if ltpf >= entry_gate:
             note = (
-                f"BUY: LTP {ltpf:.4f} ≥ entry {e:.4f} (between stop {sl:.4f} and target {tg:.4f})."
+                f"BUY: LTP {ltpf:.4f} near/above entry {e:.4f} (gate {entry_gate:.4f}) "
+                f"(between stop {sl:.4f} and target {tg:.4f})."
             )
             return "active", "Active", note, 2
         note = (
