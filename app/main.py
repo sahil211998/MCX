@@ -553,6 +553,31 @@ def api_commodities() -> list[dict[str, Any]]:
         raise HTTPException(502, f"MCX catalog unavailable: {e}") from e
 
 
+@app.get("/api/quote/{mcx_product}")
+def api_quote(mcx_product: str) -> dict[str, Any]:
+    """
+    Lightweight live quote endpoint for the UI.
+    Note: values come from MCX market watch (FUTCOM); may be unavailable if product isn't on watch.
+    """
+    prod = mcx_product.strip().upper()
+    if not prod or len(prod) > 32:
+        raise HTTPException(400, "Invalid product code")
+    try:
+        q = live_quote(prod)
+    except Exception as e:
+        raise HTTPException(502, f"Live quote failed: {e}") from e
+    if q is None:
+        return {"ok": True, "mcx_product": prod, "available": False, "ltp": None, "expiry": None}
+    return {
+        "ok": True,
+        "mcx_product": prod,
+        "available": True,
+        "ltp": float(q.ltp) if q.ltp is not None else None,
+        "expiry": str(q.expiry) if q.expiry is not None else None,
+        "symbol": str(q.symbol) if q.symbol is not None else None,
+    }
+
+
 @app.post("/api/commodities/{mcx_product}/analyze")
 def api_analyze_commodity(
     mcx_product: str,

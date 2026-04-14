@@ -24,8 +24,8 @@ services:
       PGHOST: db
       PGPORT: "5432"
       PGDATABASE: mcx
-      PGUSER: mcx_user
-      PGPASSWORD: mcx_pass
+      PGUSER: postgres
+      PGPASSWORD: postgres
 
       # Optional app toggles (safe defaults)
       AUTO_SIGNAL_ENABLED: "1"
@@ -38,7 +38,15 @@ services:
       PGCONNECT_TIMEOUT: "5"
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "${WEB_PORT:-8000}:8000"
+
+networks:
+  default:
+    name: mcx_smart_signal_net
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.201.0.0/24
 
 volumes:
   mcx_pgdata:

@@ -360,6 +360,9 @@
     <section class="panel">
       <h2>Analysis</h2>
       <p id="detailIntro" class="muted">Select a commodity.</p>
+      <p id="selectedLtp" class="muted hidden" style="margin:0.35rem 0 0;">
+        LTP (live): <strong id="selectedLtpVal">—</strong> <span id="selectedLtpMeta"></span>
+      </p>
       <div id="detailBody" class="hidden" aria-live="polite"></div>
       <div class="toolbar">
         <button type="button" class="primary" id="btnAnalyze" disabled>Analyze selected (store DB)</button>
@@ -488,6 +491,9 @@
     const btnAnalyze = document.getElementById('btnAnalyze');
     const btnAnalyzeNoStore = document.getElementById('btnAnalyzeNoStore');
     const status = document.getElementById('status');
+    const selectedLtp = document.getElementById('selectedLtp');
+    const selectedLtpVal = document.getElementById('selectedLtpVal');
+    const selectedLtpMeta = document.getElementById('selectedLtpMeta');
     const rowsIntraday = document.getElementById('rowsIntraday');
     const rowsLong = document.getElementById('rowsLong');
     const tabIntraday = document.getElementById('tabIntraday');
@@ -648,6 +654,38 @@
       detailIntro.textContent = a.mcx_product + ' — full data loaded.';
     }
 
+    function setSelectedLtpDisplay({ ltp, expiry, available }) {
+      if (!selectedLtp || !selectedLtpVal || !selectedLtpMeta) return;
+      if (!selectedProduct) {
+        selectedLtp.classList.add('hidden');
+        selectedLtpVal.textContent = '—';
+        selectedLtpMeta.textContent = '';
+        return;
+      }
+      selectedLtp.classList.remove('hidden');
+      if (!available) {
+        selectedLtpVal.textContent = '—';
+        selectedLtpMeta.textContent = ' (not on watch)';
+        return;
+      }
+      selectedLtpVal.textContent = ltp != null ? fmt(Number(ltp)) : '—';
+      selectedLtpMeta.textContent = expiry ? (' (' + String(expiry) + ')') : '';
+    }
+
+    async function refreshSelectedLtp() {
+      if (!selectedProduct) return;
+      // Avoid polling when tab is hidden.
+      if (document.hidden) return;
+      try {
+        const r = await fetch('/api/quote/' + encodeURIComponent(String(selectedProduct).trim().toUpperCase()), { cache: 'no-store' });
+        if (!r.ok) return;
+        const j = await r.json();
+        setSelectedLtpDisplay({ ltp: j.ltp, expiry: j.expiry, available: j.available !== false });
+      } catch (e) {
+        // ignore
+      }
+    }
+
     async function loadCatalog() {
       catalogMeta.textContent = 'Fetching MCX market watch…';
       const r = await fetch('/api/commodities');
@@ -671,6 +709,8 @@
           selectedProduct = sym;
           detailIntro.textContent = 'Selected: ' + sym + ' — click Analyze.';
           detailBody.innerHTML = '';
+          setSelectedLtpDisplay({ ltp: null, expiry: null, available: true });
+          refreshSelectedLtp();
           btnAnalyze.disabled = false;
         });
         li.appendChild(b);
@@ -835,7 +875,9 @@
           <td>${fmt(s.intraday_entry)}</td>
           <td>${fmt(s.intraday_stop)}</td>
           <td>${fmt(s.intraday_target)}</td>
-          <td class="muted">${s.intraday_live_ltp != null ? fmt(s.intraday_live_ltp) : '—'}</td>
+          <td class="muted" data-ltp-product="${escapeHtml(String(s.mcx_product || '').trim().toUpperCase())}">
+            ${s.intraday_live_ltp != null ? fmt(s.intraday_live_ltp) : '—'}
+          </td>
           <td class="${stClass}">${escapeHtml(statusLabel)}</td>
           <td class="muted" title="${escapeHtml(detail)}">
             <a class="muted" href="${chartHref}" data-chart="intraday">Chart</a>
@@ -876,12 +918,44 @@
       }
     }
 
+    async function refreshTableLtps() {
+      if (document.hidden) return;
+      const cells = Array.from(document.querySelectorAll('td[data-ltp-product]'));
+      if (!cells.length) return;
+      const products = [...new Set(cells.map((c) => (c.getAttribute('data-ltp-product') || '').trim()).filter(Boolean))];
+      if (!products.length) return;
+      try {
+        const results = await Promise.all(
+          products.map(async (p) => {
+            try {
+              const r = await fetch('/api/quote/' + encodeURIComponent(p), { cache: 'no-store' });
+              if (!r.ok) return [p, null];
+              const j = await r.json();
+              return [p, j];
+            } catch (e) {
+              return [p, null];
+            }
+          }),
+        );
+        const byProduct = Object.fromEntries(results);
+        for (const cell of cells) {
+          const p = (cell.getAttribute('data-ltp-product') || '').trim();
+          const j = byProduct[p];
+          if (!j || j.available === false || j.ltp == null) continue;
+          cell.textContent = fmt(Number(j.ltp));
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
     async function loadSignals() {
       const r = await fetch('/api/signals?limit=40', { cache: 'no-store' });
       if (!r.ok) return;
       signalsCache = await r.json();
       syncProductFilterOptions();
       renderSignalsTable();
+      refreshTableLtps();
     }
 
     function toggleCallTimeSort() {
@@ -1223,12 +1297,16 @@
     setInterval(() => { loadSignals(); }, 30000);
     setInterval(() => { loadAutoStatus(); }, 12000);
     setInterval(() => { loadOutcomeSchedule(); }, 300000);
+    setInterval(() => { refreshSelectedLtp(); }, 3000);
+    setInterval(() => { refreshTableLtps(); }, 3000);
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) {
         loadSignals();
         loadAutoStatus();
         loadAccuracy();
         loadOutcomeSchedule();
+        refreshSelectedLtp();
+        refreshTableLtps();
       }
     });
   </script>
